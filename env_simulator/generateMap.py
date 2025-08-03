@@ -32,7 +32,7 @@ class WumpusWorldGenerator:
           if (i, j) not in self.protected_cells:
             if not any(item in self.map[i][j] for item in ['W', 'P', 'G', 'S']):
               if 'B' in self.map[i][j]:
-                  self.map[i][j].remove('B')
+                self.map[i][j].remove('B')
               
               self.map[i][j].append('P')
               self.adjacent_cells(i, j, 'B')
@@ -40,12 +40,10 @@ class WumpusWorldGenerator:
     return self.map
 
   def adjacent_cells(self, i, j, char):
-    for di in [-1, 0, 1]:
-      for dj in [-1, 0, 1]:
-        if abs(di) + abs(dj) == 1:
-          ni, nj = i + di, j + dj
-          if 0 <= ni < self.N and 0 <= nj < self.N:
-            if char not in self.map[ni][nj]:
+    for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
+      ni, nj = i + di, j + dj
+      if 0 <= ni < self.N and 0 <= nj < self.N:
+          if char not in self.map[ni][nj]:
               if char == 'B' and 'P' in self.map[ni][nj]:
                 continue
               else: self.map[ni][nj].append(char)
