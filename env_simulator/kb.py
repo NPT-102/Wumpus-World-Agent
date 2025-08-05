@@ -1,5 +1,5 @@
 class KnowledgeBase:
-  def __init__(self, N=4):
+  def __init__(self, N=8):
     self.facts = set()
     self.rules = []
     self.N = N
@@ -49,14 +49,19 @@ class KnowledgeBase:
       new_facts = False
       for premise, rule_type, conclusions in self.rules:
         if rule_type == 'DISJUNCTION':
-          if premise in self.facts:
-            continue
+          if self.is_premise_true(premise):
+            possible = [c for c in conclusions if self.is_premise_true(c) is not False]
+            
+            if len(possible) == 1:
+              if possible[0] not in self.facts:
+                self.facts.add(possible[0])
+                new_facts = True
         elif rule_type == 'IMPLIES':
             if 'AND' in premise:
               p1, p2 = premise.split(' AND ')
-              premise_satisfied = self.is_premise_true(p1) and self.is_premise_true(p2)
+              premise_satisfied = self.is_premise_true(p1) is True and self.is_premise_true(p2) is True
             else:
-              premise_satisfied = self.is_premise_true(premise)
+              premise_satisfied = self.is_premise_true(premise) is True
 
             if premise_satisfied:
               for conclusion in conclusions:
@@ -65,12 +70,26 @@ class KnowledgeBase:
                   new_facts = True
 
   def is_premise_true(self, premise):
-    return premise in self.facts or (premise.startswith('~') and premise[1:] not in self.facts)
+    if premise.startswith('~'):
+      symbol = premise[1:]
+      if symbol in self.facts:
+        return False
+      elif f'~{symbol}' in self.facts:
+        return True
+      else:
+        return None
+    else:
+      if premise in self.facts:
+        return True
+      elif f'~{premise}' in self.facts:
+        return False
+      else:
+        return None  
     
   def query_safe(self, i, j):
     return f'Safe({i}, {j})' in self.facts
 
   def print_knowledge(self):
-    print("Current facts in KB:")
+    print("Facts:")
     for fact in sorted(self.facts):
         print(fact)
