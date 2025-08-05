@@ -40,8 +40,9 @@ class KnowledgeBase:
         adj.append((ni, nj))
     return adj
 
-  def add_fact(self, symbol):
-    self.facts.add(symbol)
+  def add_fact(self, *symbols):
+    for symbol in symbols:
+      self.facts.add(symbol)
 
   def forward_chain(self):
     new_facts = True

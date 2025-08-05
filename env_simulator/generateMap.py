@@ -6,7 +6,7 @@ class WumpusWorldGenerator:
     self.wumpus = wumpus
     self.pits_probability = pits_probability
     self.map = [[[] for _ in range(N)] for _ in range(N)]
-    self.protected_cells = [(N - 1, 0), (N - 1, 1), (N - 2, 0)]
+    self.protected_cells = [(0, 0), (0, 1), (1, 0)]
     
   def generate_map(self):
     # place gold
