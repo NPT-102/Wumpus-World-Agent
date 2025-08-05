@@ -30,7 +30,7 @@ class Agent:
 	position = (0, 0)
 	direction = "E" #East
 
-	def __init__(self, map, N=8):
+	def __init__(self, map: list[list[list]], N=8):
 		self.kb = KB(N=N)
 		self.N = N
 		self.map = map
@@ -116,7 +116,13 @@ class Agent:
 		while (0 <= i < self.N) and (0 <= j < self.N):
 			if "W" in self.map[i][j]:
 				# TODO
-				# Update new map (Note that the agent does not know the exact changes on the map)
+				self.map[i][j].remove("W")
+				for di, dj in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+					ni, nj = i + di, j + dj
+					if (0 <= ni < self.N) and (0 <= nj < self.N):
+						if "S" in self.map[ni][nj]:
+							self.map[ni][nj].remove("S")
+
 				self.arrow_hit = 1
 				return True
 
