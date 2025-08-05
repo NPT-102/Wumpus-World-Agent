@@ -8,28 +8,27 @@ class KnowledgeBase:
   def initialize_rules(self):
     for i in range(0, self.N):
       for j in range(0, self.N):
-        # Get adjacent cells
         adj_cells = self.get_adjacent_cells(i, j)
         
-        # Rule: Breeze implies at least one adjacent pit
+        # breeze implies at least one adjacent pit
         if adj_cells:
           pit_symbols = [f'P({adj[0]}, {adj[1]})' for adj in adj_cells]
           self.rules.append((f'B({i}, {j})', 'DISJUNCTION', pit_symbols))
 
-        # Rule: No breeze implies no pits in adjacent cells
+        # no breeze implies no pits in adjacent cells
         for adj in adj_cells:
           self.rules.append((f'~B({i}, {j})', 'IMPLIES', [f'~P({adj[0]}, {adj[1]})']))
 
-        # Rule: Stench implies at least one adjacent Wumpus
+        # stench implies at least one wumpus
         if adj_cells:
           wumpus_symbols = [f'W({adj[0]}, {adj[1]})' for adj in adj_cells]
           self.rules.append((f'S({i}, {j})', 'DISJUNCTION', wumpus_symbols))
 
-        # Rule: No stench implies no Wumpus in adjacent cells
+        # no stench implies no wumpus in adjacent cells
         for adj in adj_cells:
           self.rules.append((f'~S({i}, {j})', 'IMPLIES', [f'~W({adj[0]}, {adj[1]})']))
 
-        # Rule: No pit and no Wumpus implies safe
+        # no pit and no wumpus implies safe
         self.rules.append((f'~P({i}, {j}) AND ~W({i}, {j})', 'IMPLIES', [f'Safe({i}, {j})']))
 
   def get_adjacent_cells(self, i, j):
@@ -69,6 +68,7 @@ class KnowledgeBase:
                   self.facts.add(conclusion)
                   new_facts = True
 
+  # check if a premise is in facts or not
   def is_premise_true(self, premise):
     if premise.startswith('~'):
       symbol = premise[1:]
@@ -85,9 +85,6 @@ class KnowledgeBase:
         return False
       else:
         return None  
-    
-  def query_safe(self, i, j):
-    return f'Safe({i}, {j})' in self.facts
 
   def print_knowledge(self):
     print("Facts:")
