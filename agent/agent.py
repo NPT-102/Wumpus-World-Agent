@@ -114,8 +114,7 @@ class Agent:
 		mi, mj = MOVE[self.direction]
 		i, j = self.position
 		while (0 <= i < self.N) and (0 <= j < self.N):
-			if "W" in self.map[i][j]:
-				# TODO
+			if "W" in self.map[i][j]:# TODO
 				self.map[i][j].remove("W")
 				for di, dj in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
 					ni, nj = i + di, j + dj
