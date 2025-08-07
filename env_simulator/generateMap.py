@@ -37,7 +37,7 @@ class WumpusWorldGenerator:
               self.map[i][j].append('P')
               self.adjacent_cells(i, j, 'B')
 
-    return self.map
+    return self.map, wumpus_position, [pos for row in self.map for pos in row if 'P' in pos]
 
   def adjacent_cells(self, i, j, char):
     for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:

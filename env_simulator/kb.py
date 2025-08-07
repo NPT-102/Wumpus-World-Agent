@@ -39,8 +39,10 @@ class KnowledgeBase:
         adj.append((ni, nj))
     return adj
 
-  def add_fact(self, symbol):
-    self.facts.add(symbol)
+  def add_fact(self, *symbols):
+    for symbol in symbols:
+      if symbol not in self.facts:
+        self.facts.add(symbol)
 
   def forward_chain(self):
     new_facts = True

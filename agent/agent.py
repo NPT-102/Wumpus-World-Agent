@@ -46,7 +46,7 @@ class Agent:
 
 	def perceive(self):
 		i, j = self.position
-		pos = self.map[i, j]
+		pos = self.map[i][j]
 		if "B" in pos:
 			self.kb.add_fact(f"B({i}, {j})")
 		else:
@@ -65,15 +65,21 @@ class Agent:
 
 		move = MOVE[self.direction]
 		i, j = (self.position[0] + move[0], self.position[1] + move[1])
+		print(f"Agent is trying to move {self.direction} to {i, j}.")
 		self.score += SCORE["move"]
 		if (0 <= i < self.N) and (0 <= j < self.N):
 			if ("W" not in self.map[i][j]) and ("P" not in self.map[i][j]):
 				self.position = (i, j)
 				self.perceive()
 				return True
-			else:
+			if "W" in self.map[i][j]:
+				print("Agent encountered a Wumpus and died.")
 				self.die()
-		
+			if "P" in self.map[i][j]:
+				print("Agent fell into a pit and died.")
+				self.die()
+		else:
+			print("Agent cannot move out of bounds.")
 		return False
 
 
@@ -98,7 +104,7 @@ class Agent:
 			return None
 
 		i, j = self.position
-		pos = self.map[i, j]
+		pos = self.map[i][j]
 
 		if "G" in pos:
 			self.gold_obtain = True
