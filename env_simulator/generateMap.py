@@ -6,7 +6,7 @@ class WumpusWorldGenerator:
     self.wumpus = wumpus
     self.pits_probability = pits_probability
     self.map = [[[] for _ in range(N)] for _ in range(N)]
-    self.protected_cells = [(N - 1, 0), (N - 1, 1), (N - 2, 0)]
+    self.protected_cells = [(0, 0), (0, 1), (1, 0)]
     
   def generate_map(self):
     # place gold
@@ -37,7 +37,7 @@ class WumpusWorldGenerator:
               self.map[i][j].append('P')
               self.adjacent_cells(i, j, 'B')
 
-    return self.map
+    return self.map, wumpus_position, [pos for row in self.map for pos in row if 'P' in pos]
 
   def adjacent_cells(self, i, j, char):
     for di, dj in [(0, 1), (1, 0), (0, -1), (-1, 0)]:
