@@ -153,3 +153,131 @@ class Agent:
 	def die(self):
 		self.score += SCORE["die"]
 		self.alive = False
+
+
+# Agent for Search algorithm
+class Agent2:
+	def __init__ (self, position=(0, 0), direction="E", alive=True, arrow_hit=0, gold_obtain=False, N=8, kb=None):
+		self.position = position
+		self.direction = direction
+		self.alive = alive
+		self.arrow_hit = arrow_hit
+		self.gold_obtain = gold_obtain
+
+		if kb is None:	
+			self.kb = KB(N)
+			i, j = self.position
+			self.kb.add_fact(
+				f"~B({i}, {j})", 
+				f"~S({i}, {j})",
+				f"~W({i}, {j})",
+				f"~P({i}, {j})",
+				f"Safe({i}, {j})"
+			)
+			self.kb.forward_chain()
+		else:
+			self.kb = kb
+
+	def __hash__(self):
+		return hash((
+			self.position,
+			self.direction,
+			self.alive,
+			self.arrow_hit,
+			self.gold_obtain
+			# frozenset(self.kb.facts)
+		))
+	
+	def __eq__ (self, other):
+		return (
+			isinstance(other, Agent2) and
+			self.position == other.position and
+			self.direction == other.direction and
+			self.alive == other.alive and
+			self.arrow_hit == other.arrow_hit and
+			self.gold_obtain == other.gold_obtain
+			# frozenset(self.kb.facts) == frozenset(other.kb.facts)
+		)
+	
+	def __lt__(self, other):
+		return (self.position, self.direction) < (other.position, other.direction)
+
+	def __repr__(self):
+		return f"(pos{self.position},direction={self.direction},gold={self.gold_obtain},arrow={self.arrow_hit})"
+	
+	def clone(self):
+		from copy import deepcopy
+		return Agent2(
+			position=self.position,
+			direction=self.direction,
+			alive=self.alive,
+			arrow_hit=self.arrow_hit,
+			gold_obtain=self.gold_obtain,
+			N=self.kb.N,
+			kb=deepcopy(self.kb)
+		)
+	
+	def perceive(self, percepts):
+		if f"Deadly{self.position}" in percepts:
+			self.alive = False
+			return
+		
+		for percept in percepts:
+			self.kb.add_fact(percept)
+
+		self.kb.forward_chain()
+
+	def turn_left(self):
+		agent = self.clone()
+		agent.direction = DIRECTION[(DIRECTION[agent.direction] - 1) % 4]
+		return agent
+	
+	def turn_right(self):
+		agent = self.clone()
+		agent.direction = DIRECTION[(DIRECTION[agent.direction] + 1) % 4]
+		return agent
+
+	def move_forward(self):
+		agent = self.clone()
+
+		di, dj = MOVE[agent.direction]
+		i, j = (agent.position[0] + di, agent.position[1] + dj)
+
+		if (0 <= i < agent.kb.N) and (0 <= j < agent.kb.N):
+			agent.position = (i, j)
+		
+		return agent
+
+	def grab_gold(self):
+		agent = self.clone()
+		if agent.kb.is_premise_true(f"G{agent.position}"):
+			agent.gold_obtain = True
+		return agent
+
+	
+class Env:
+	def __init__(self, map):
+		self.map = map
+
+	def get_percept(self, pos):
+		percepts = []
+		i, j = pos
+		square = self.map[i][j]
+
+		if ("W" in square) or ("P" in square):
+			return [f"Deadly{pos}"]
+
+		if "G" in square:
+			percepts.append(f"G{pos}")
+
+		if "B" in square:
+			percepts.append(f"B{pos}")
+		else:
+			percepts.append(f"~B{pos}")
+
+		if "S" in square:
+			percepts.append(f"S{pos}")
+		else:
+			percepts.append(f"~S{pos}")
+		
+		return percepts
