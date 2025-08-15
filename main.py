@@ -27,7 +27,9 @@ from agent.hybrid_agent_action_dynamic import hybrid_agent_action_dynamic
 def main():
   generator = WumpusWorldGenerator(N=4)
   gam_map, wumpus_position, pit_positions = generator.generate_map()
-  
+  if not isinstance(wumpus_position, list):
+    wumpus_position = [wumpus_position]
+
   print("Generated Game Map:")
   print_map(gam_map)
 
@@ -41,12 +43,11 @@ def main():
   # agent = Agent(map=gam_map, N=4)
   # result = hybrid_agent_action(agent, gam_map)
   # print("Final result:", result)
+
+
   # hybrid_agent_action_dynamic
   agent = Agent(map=gam_map, N=4)
-
-  # Chạy hybrid agent bản dynamic (có Wumpus di động)
   result = hybrid_agent_action_dynamic(agent, gam_map, wumpus_position, pit_positions)
-
   print("Final result:", result)
 
 if __name__ == "__main__":

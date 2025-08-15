@@ -47,6 +47,7 @@ class Agent:
 	def perceive(self):
 		i, j = self.position
 		pos = self.map[i][j]
+
 		if "B" in pos:
 			self.kb.add_fact(f"B({i}, {j})")
 		else:
@@ -56,8 +57,14 @@ class Agent:
 			self.kb.add_fact(f"S({i}, {j})")
 		else:
 			self.kb.add_fact(f"~S({i}, {j})")
+			# Nếu không còn Stench -> các ô kề không có Wumpus
+			for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
+				ni, nj = i + di, j + dj
+				if 0 <= ni < self.N and 0 <= nj < self.N:
+					self.kb.add_fact(f"~W({ni}, {nj})")
 
 		self.kb.forward_chain()
+
 
 	def move_forward(self):
 		if not self.alive:
