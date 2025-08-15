@@ -2,7 +2,9 @@ from env_simulator.generateMap import WumpusWorldGenerator, print_map
 from env_simulator.kb import KnowledgeBase
 from agent.random_agent import random_agent
 from search.dijkstra import dijkstra
-from agent.agent import Env, Agent2
+from agent.agent import  Agent
+from agent.hybrid_agent import hybrid_agent_action
+from agent.hybrid_agent_action_dynamic import hybrid_agent_action_dynamic
 
 # def main():
 #   kb = KnowledgeBase(N=4)
@@ -25,15 +27,34 @@ from agent.agent import Env, Agent2
 def main():
   generator = WumpusWorldGenerator(N=4)
   gam_map, wumpus_position, pit_positions = generator.generate_map()
-  
+  # Lấy tất cả Wumpus, kể cả 1 hay nhiều
+  if isinstance(wumpus_position, tuple):
+      wumpus_position = [wumpus_position]  # tuple 1 Wumpus → list
+  elif isinstance(wumpus_position, list):
+      wumpus_position = list(wumpus_position)  # copy nếu cần
+  else:
+      raise ValueError("wumpus_position không hợp lệ")
+
+
   print("Generated Game Map:")
   print_map(gam_map)
 
-  agent = Agent2(N=4)
-  path = dijkstra(gam_map, agent)
-  if path is not None:
-    for x in path:
-      print(x)
+  # agent = Agent2(N=4)
+  # path = dijkstra(gam_map, agent)
+  # if path is not None:
+  #   for x in path:
+  #     print(x)
+
+  #hybrid agent
+  # agent = Agent(map=gam_map, N=4)
+  # result = hybrid_agent_action(agent, gam_map)
+  # print("Final result:", result)
+
+
+  # hybrid_agent_action_dynamic
+  agent = Agent(map=gam_map, N=4)
+  result = hybrid_agent_action_dynamic(agent, gam_map, wumpus_position, pit_positions)
+  print("Final result:", result)
 
 if __name__ == "__main__":
   main()

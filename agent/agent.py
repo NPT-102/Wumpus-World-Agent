@@ -8,8 +8,8 @@ DIRECTION = {
 MOVE = {
 	"E": (0, 1), 	# East
 	"W": (0, -1),	# West
-	"S": (-1, 0),	# South
-	"N": (1, 0),  	# North
+	"S": (1, 0),	# South
+	"N": (-1, 0),  	# North
 }
 
 SCORE = {
@@ -47,6 +47,7 @@ class Agent:
 	def perceive(self):
 		i, j = self.position
 		pos = self.map[i][j]
+
 		if "B" in pos:
 			self.kb.add_fact(f"B({i}, {j})")
 		else:
@@ -56,8 +57,14 @@ class Agent:
 			self.kb.add_fact(f"S({i}, {j})")
 		else:
 			self.kb.add_fact(f"~S({i}, {j})")
+			# Nếu không còn Stench -> các ô kề không có Wumpus
+			for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
+				ni, nj = i + di, j + dj
+				if 0 <= ni < self.N and 0 <= nj < self.N:
+					self.kb.add_fact(f"~W({ni}, {nj})")
 
 		self.kb.forward_chain()
+
 
 	def move_forward(self):
 		if not self.alive:
@@ -116,26 +123,46 @@ class Agent:
 		if not self.alive:
 			return None
 		
+		if self.arrow_hit != 0:
+			print("No arrows left!")
+			return False
+
 		self.score += SCORE["shoot"]
 		mi, mj = MOVE[self.direction]
 		i, j = self.position
+		hit_any = False
+
+		i += mi
+		j += mj
 		while (0 <= i < self.N) and (0 <= j < self.N):
-			if "W" in self.map[i][j]:# TODO
+			if "W" in self.map[i][j]:
 				self.map[i][j].remove("W")
+				hit_any = True
+				print(f"Scream! Wumpus at {(i,j)} is dead.")
+
+				# Xóa Stench xung quanh Wumpus
 				for di, dj in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
 					ni, nj = i + di, j + dj
 					if (0 <= ni < self.N) and (0 <= nj < self.N):
 						if "S" in self.map[ni][nj]:
 							self.map[ni][nj].remove("S")
-
-				self.arrow_hit = 1
-				return True
+				
+				# Cập nhật KB: W chết, ô xung quanh không còn Stench
+				self.kb.add_fact(f"~W({i}, {j})")
+				for ni, nj in self.kb.get_adjacent_cells(i, j):
+					self.kb.add_fact(f"~S({ni}, {nj})")
 
 			i += mi
 			j += mj
 
-		self.arrow_hit = -1
-		return False
+		if hit_any:
+			self.arrow_hit = 1
+			self.kb.forward_chain()
+			return True
+		else:
+			self.arrow_hit = -1
+			print("Arrow missed!")
+			return False
 
 	def escape(self):
 		if not self.alive:
