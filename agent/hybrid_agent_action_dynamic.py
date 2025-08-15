@@ -1,4 +1,3 @@
-# agent/hybrid_agent_action_dynamic.py
 from agent.agent import Agent, Agent2, MOVE, DIRECTION
 from search.dijkstra import dijkstra
 from env_simulator.kb import KnowledgeBase as KB
@@ -14,23 +13,19 @@ SCORE = {
 }
 
 def rotate_towards(agent: Agent, desired_dir: str):
-    """Quay Agent về hướng desired_dir."""
-    turn_count = 0
-    dir_list = list(DIRECTION.keys())[:4]  # ["E","S","W","N"]
-    print(f"[ROTATE] Current direction: {agent.direction}, Desired: {desired_dir}")
-    while agent.direction != desired_dir and turn_count < 4:
+    turns_done = 0
+    dir_list = list(DIRECTION.keys())[:4]
+    while agent.direction != desired_dir and turns_done < 4:
         cur_idx = dir_list.index(agent.direction)
         des_idx = dir_list.index(desired_dir)
         if (cur_idx + 1) % 4 == des_idx:
             agent.turn_right()
-            print(f"[ROTATE] Turned right → Now facing {agent.direction}")
         else:
             agent.turn_left()
-            print(f"[ROTATE] Turned left → Now facing {agent.direction}")
-        turn_count += 1
+        turns_done += 1
+    return turns_done
 
 def direction_from_delta(di, dj):
-    """Xác định hướng từ delta (di, dj)."""
     for d, (mi, mj) in MOVE.items():
         if (di, dj) == (mi, mj):
             return d
@@ -40,30 +35,33 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
     N = len(game_map)
     visited = set()
     kb = agent.kb if hasattr(agent, 'kb') else KB(N=N)
-    action_counter = 0  # Đếm số hành động thực tế
+    action_counter = 0
+
+    # Quản lý trạng thái sống/chết của Wumpus
+    wumpus_alive = [True]*len(wumpus_positions)
+
+    def increment_counter(count=1):
+        nonlocal action_counter, wumpus_positions
+        action_counter += count
+        while action_counter >= 5:
+            wumpus_positions = update_wumpus_position(agent, game_map, wumpus_positions, pit_positions, wumpus_alive)
+            action_counter -= 5
 
     while True:
         if not agent.alive:
-            print("Agent died! Game Over.")
             break
 
-        # 1. Cảm nhận
         agent.perceive()
         visited.add(agent.position)
 
-        # 2. Nhặt vàng nếu có
         if agent.grab_gold():
-            print(f"Grabbed gold at {agent.position}!")
-            action_counter += 1
-            print(f"[DEBUG] Action counter: {action_counter} (grab gold)")
+            increment_counter()
 
-        # 3. Nếu có vàng và ở (0,0) → về đích
         if agent.gold_obtain and agent.position == (0, 0):
             agent.escape()
-            print("Escaped successfully!")
+            increment_counter()
             break
 
-        # 4. Lập kế hoạch tạm thời
         plan_agent = Agent2(
             position=agent.position,
             direction=agent.direction,
@@ -74,7 +72,6 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
             kb=deepcopy(agent.kb)
         )
 
-        # 5. Kiểm tra Wumpus trong tầm bắn
         if agent.arrow_hit == 0:
             mi, mj = MOVE[agent.direction]
             i, j = agent.position
@@ -82,20 +79,19 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
 
             i += mi
             j += mj
-            while (0 <= i < N) and (0 <= j < N):
-                for w_pos in wumpus_positions:
-                    if (i, j) == w_pos:
-                        in_sight_wumpus.append(w_pos)
+            while 0 <= i < N and 0 <= j < N:
+                for idx, w_pos in enumerate(wumpus_positions):
+                    if (i, j) == w_pos and wumpus_alive[idx]:
+                        in_sight_wumpus.append((idx, w_pos))
                         break
                 i += mi
                 j += mj
 
             if in_sight_wumpus:
-                wumpus_pos = in_sight_wumpus[0]
-
+                idx, w_pos = in_sight_wumpus[0]
                 temp_map = deepcopy(game_map)
-                if "W" in temp_map[wumpus_pos[0]][wumpus_pos[1]]:
-                    temp_map[wumpus_pos[0]][wumpus_pos[1]].remove("W")
+                if "W" in temp_map[w_pos[0]][w_pos[1]]:
+                    temp_map[w_pos[0]][w_pos[1]].remove("W")
 
                 path_with_detour = dijkstra(temp_map, plan_agent)
                 path_direct = dijkstra(game_map, plan_agent)
@@ -109,47 +105,30 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                     shoot_wumpus = True
 
                 if shoot_wumpus:
-                    print(f"Shooting Wumpus at {wumpus_pos}")
                     agent.shoot()
-                    action_counter += 1
-                    print(f"[DEBUG] Action counter: {action_counter} (shoot)")
-                    wumpus_positions = [w for w in wumpus_positions if w != wumpus_pos]
-                    if action_counter >= 5:
-                        print(f"[DEBUG] 5 actions reached → Wumpus moves")
-                        wumpus_positions = update_wumpus_position(agent, game_map, wumpus_positions, pit_positions)
-                        action_counter = 0
+                    wumpus_alive[idx] = False
+                    wumpus_positions[idx] = w_pos  # giữ vị trí để update vẫn nhận biết là dead
                     continue
 
-        # 6. Tìm đường đi tiếp
         path_states = dijkstra(game_map, plan_agent)
         if not path_states or len(path_states) < 2:
-            print("No path found or already at goal.")
             break
 
         next_state = path_states[1]
 
-        # Nếu chỉ xoay hướng
         if next_state.position == agent.position:
-            rotate_towards(agent, next_state.direction)
-            action_counter += 1
-            print(f"[DEBUG] Action counter: {action_counter} (rotate)")
+            turns = rotate_towards(agent, next_state.direction)
+            increment_counter(turns)
         else:
-            # Xoay tới hướng trước khi đi
-            rotate_towards(agent, direction_from_delta(next_state.position[0]-agent.position[0],
-                                                       next_state.position[1]-agent.position[1]))
-            action_counter += 1
-            print(f"[DEBUG] Action counter: {action_counter} (rotate)")
-
-            # Di chuyển 1 ô
+            di = next_state.position[0] - agent.position[0]
+            dj = next_state.position[1] - agent.position[1]
+            desired_dir = direction_from_delta(di, dj)
+            if desired_dir is None:
+                break
+            turns = rotate_towards(agent, desired_dir)
+            increment_counter(turns)
             agent.move_forward()
-            action_counter += 1
-            print(f"[DEBUG] Action counter: {action_counter} (move)")
-
-        # 7. Kiểm tra nếu đủ 5 hành động → Wumpus di chuyển
-        if action_counter >= 5:
-            print(f"[DEBUG] 5 actions reached → Wumpus moves")
-            wumpus_positions = update_wumpus_position(agent, game_map, wumpus_positions, pit_positions)
-            action_counter = 0
+            increment_counter()
 
     return {
         "final_position": agent.position,

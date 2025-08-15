@@ -27,8 +27,14 @@ from agent.hybrid_agent_action_dynamic import hybrid_agent_action_dynamic
 def main():
   generator = WumpusWorldGenerator(N=4)
   gam_map, wumpus_position, pit_positions = generator.generate_map()
-  if not isinstance(wumpus_position, list):
-    wumpus_position = [wumpus_position]
+  # Lấy tất cả Wumpus, kể cả 1 hay nhiều
+  if isinstance(wumpus_position, tuple):
+      wumpus_position = [wumpus_position]  # tuple 1 Wumpus → list
+  elif isinstance(wumpus_position, list):
+      wumpus_position = list(wumpus_position)  # copy nếu cần
+  else:
+      raise ValueError("wumpus_position không hợp lệ")
+
 
   print("Generated Game Map:")
   print_map(gam_map)
