@@ -53,7 +53,7 @@ def random_agent(gam_map, wumpus_position, pit_positions, states):
             print("Agent is no longer alive.")
             break
         action = random_agent_action(agent_instance, gam_map)
-        states.add(agent_instance.position, agent_instance.direction, agent_instance.map)
+        states.add(agent_instance, action)
         if action == "climb" and agent_instance.position == (0, 0) and not agent_instance.gold_obtain:
             print("Agent has escaped without gold.")
             break
@@ -61,4 +61,4 @@ def random_agent(gam_map, wumpus_position, pit_positions, states):
             print("Agent has escaped with gold.")
             break
         print(f"Agent's current position: {agent_instance.position}, Score: {agent_instance.score}")
-    return agent_instance.score
+    return agent_instance.score, states
