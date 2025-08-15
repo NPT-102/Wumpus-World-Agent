@@ -92,3 +92,9 @@ class KnowledgeBase:
     print("Facts:")
     for fact in sorted(self.facts):
         print(fact)
+
+  def remove_wumpus(self, i, j):
+    self.add_fact(f"~W({i}, {j})")
+    for ni, nj in self.get_adjacent_cells(i, j):
+        self.add_fact(f"~S({ni}, {nj})")
+    self.forward_chain()

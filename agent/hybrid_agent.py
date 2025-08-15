@@ -1,6 +1,7 @@
 # agent/hybrid_agent.py
 from agent.agent import Agent, Agent2, DIRECTION as ADIR, MOVE as AMOVE
 from search.dijkstra import dijkstra
+from copy import deepcopy
 # KB có thể không cần import ở đây, để lại cũng không sao
 # from env_simulator.kb import KnowledgeBase as KB
 
@@ -78,8 +79,39 @@ def hybrid_agent_action(agent: Agent, game_map: list[list[list]]):
             arrow_hit=agent.arrow_hit,
             gold_obtain=agent.gold_obtain,
             N=N,
-            kb=agent.kb  # chia sẻ KB hiện tại
+            kb=deepcopy(agent.kb)
         )
+        # Kiểm tra có Wumpus trong tầm bắn không
+        if agent.arrow_hit == 0:  # còn đạn
+            # Lấy hướng di chuyển (dx, dy)
+            mi, mj = AMOVE[agent.direction]
+            i, j = agent.position
+            in_sight_wumpus = []
+
+            i += mi
+            j += mj
+            while (0 <= i < N) and (0 <= j < N):
+                if "W" in game_map[i][j]:
+                    in_sight_wumpus.append((i, j))
+                i += mi
+                j += mj
+
+            # Nếu thấy Wumpus trước mặt và bắn có lợi → bắn
+            if in_sight_wumpus:
+                path_with_wumpus = dijkstra(game_map, plan_agent)
+                game_map_no_wumpus = deepcopy(game_map)
+                for wpos in in_sight_wumpus:
+                    if "W" in game_map_no_wumpus[wpos[0]][wpos[1]]:
+                        game_map_no_wumpus[wpos[0]][wpos[1]].remove("W")
+                path_no_wumpus = dijkstra(game_map_no_wumpus, plan_agent)
+
+                cost_with = len(path_with_wumpus) if path_with_wumpus else float("inf")
+                cost_no = len(path_no_wumpus) + 10  # bắn -10 điểm
+
+                if cost_no < cost_with:
+                    print(f"Shooting Wumpus at {in_sight_wumpus}")
+                    agent.shoot()
+                    continue
 
         path_states = dijkstra(game_map, plan_agent)
         if not path_states or len(path_states) < 2:
