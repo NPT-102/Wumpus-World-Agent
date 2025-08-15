@@ -43,7 +43,7 @@ def is_valid_move(gam_map, position):
             0 <= y < len(gam_map[0]) and 
             not gam_map[x][y])  # Ensure the cell is not a wall or obstacle
 
-def random_agent(gam_map, wumpus_position, pit_positions):
+def random_agent(gam_map, wumpus_position, pit_positions, states):
     """
     Main function to run the random agent.
     """
@@ -53,6 +53,7 @@ def random_agent(gam_map, wumpus_position, pit_positions):
             print("Agent is no longer alive.")
             break
         action = random_agent_action(agent_instance, gam_map)
+        states.add(agent_instance.position, agent_instance.direction, agent_instance.map)
         if action == "climb" and agent_instance.position == (0, 0) and not agent_instance.gold_obtain:
             print("Agent has escaped without gold.")
             break
