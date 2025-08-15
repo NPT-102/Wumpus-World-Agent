@@ -8,8 +8,8 @@ DIRECTION = {
 MOVE = {
 	"E": (0, 1), 	# East
 	"W": (0, -1),	# West
-	"S": (-1, 0),	# South
-	"N": (1, 0),  	# North
+	"S": (1, 0),	# South
+	"N": (-1, 0),  	# North
 }
 
 SCORE = {

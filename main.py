@@ -4,6 +4,7 @@ from agent.random_agent import random_agent
 from search.dijkstra import dijkstra
 from agent.agent import  Agent
 from agent.hybrid_agent import hybrid_agent_action
+from agent.hybrid_agent_action_dynamic import hybrid_agent_action_dynamic
 
 # def main():
 #   kb = KnowledgeBase(N=4)
@@ -36,8 +37,16 @@ def main():
   #   for x in path:
   #     print(x)
 
+  #hybrid agent
+  # agent = Agent(map=gam_map, N=4)
+  # result = hybrid_agent_action(agent, gam_map)
+  # print("Final result:", result)
+  # hybrid_agent_action_dynamic
   agent = Agent(map=gam_map, N=4)
-  result = hybrid_agent_action(agent, gam_map)
+
+  # Chạy hybrid agent bản dynamic (có Wumpus di động)
+  result = hybrid_agent_action_dynamic(agent, gam_map, wumpus_position, pit_positions)
+
   print("Final result:", result)
 
 if __name__ == "__main__":
