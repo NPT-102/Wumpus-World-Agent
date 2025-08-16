@@ -123,33 +123,17 @@ class KnowledgeBase:
     Trả về True nếu KB chưa chắc chắn là không có Wumpus ở ô (i,j)
     và có khả năng Wumpus dựa trên Stench.
     """
-    if f"W({i},{j})" in self.facts:
+    if f"W({i}, {j})" in self.facts:
         return True      # chắc chắn có Wumpus
-    if f"~W({i},{j})" in self.facts:
+    if f"~W({i}, {j})" in self.facts:
         return False     # chắc chắn không có Wumpus
     
     # Nếu chưa biết, dự đoán khả năng từ Stench xung quanh
     adj = self.get_adjacent_cells(i, j)
     for ni, nj in adj:
-        if f"S({ni},{nj})" in self.facts:
+        if f"S({ni}, {nj})" in self.facts:  # Fixed spacing to match fact format
             return True  # có Stench gần => khả năng Wumpus
     return False
-
-
-  def mark_safe(self, i, j):
-    """
-    Khi Wumpus chết, đánh dấu ô an toàn.
-    """
-    self.add_fact(f"~W({i},{j})")
-    self.forward_chain()
-
-
-  def query_possible_wumpus(self, i, j):
-    """
-    Trả về True nếu KB dự đoán có khả năng Wumpus ở (i,j) dựa trên Stench và facts hiện tại
-    """
-    # ví dụ: nếu có Stench xung quanh ô này và chưa xác định an toàn
-    return f"W({i},{j})" not in self.facts_negated  # chỉ ví dụ, tùy theo cách KB lưu trữ
   
   def is_safe(self, i, j):
     # coi ô safe nếu chắc chắn không có Wumpus hoặc Pit

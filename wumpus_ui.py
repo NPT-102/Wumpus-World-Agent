@@ -153,7 +153,7 @@ class WumpusWorldUI:
             self.wumpus_positions = [self.wumpus_positions]
         
         # Create base agent
-        self.agent = Agent(map=self.game_map, N=self.grid_size)
+        self.agent = Agent(environment_map=self.game_map, N=self.grid_size)
         
         # Create appropriate agent wrapper based on selection
         agent_type = self.agent_var.get()

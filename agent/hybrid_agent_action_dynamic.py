@@ -434,7 +434,7 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                         wumpus_alive[idx] = False
                         print(f"Wumpus {idx} at {w_pos} marked as dead in wumpus_alive array")
                 
-                kb.mark_safe(target_i, target_j)
+                kb.remove_wumpus(target_i, target_j)
                 increment_counter()
                 continue
 

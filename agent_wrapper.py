@@ -2,7 +2,7 @@
 Wrapper classes for different agent types to work with the step-by-step UI
 """
 import random
-from agent.agent import Agent, Agent2, MOVE, DIRECTION
+from agent.agent import Agent, Agent2 as PlanningAgent, MOVE, DIRECTION
 from agent.hybrid_agent import hybrid_agent_action
 from search.dijkstra import dijkstra
 from copy import deepcopy
@@ -11,7 +11,7 @@ class BaseAgentWrapper:
     """Base class for agent wrappers"""
     def __init__(self, agent, game_map, wumpus_positions, pit_positions):
         self.agent = agent
-        self.game_map = game_map
+        self.game_map = game_map  # This is the environment map reference
         self.wumpus_positions = wumpus_positions
         self.pit_positions = pit_positions
         self.visited = {(0, 0)}
@@ -190,7 +190,7 @@ class HybridAgentWrapper(BaseAgentWrapper):
             return False, f"Agent successfully returned home with gold! +1000 points! Final score: {self.agent.score}"
         
         # Create planning agent
-        plan_agent = Agent2(
+        plan_agent = PlanningAgent(
             position=self.agent.position,
             direction=self.agent.direction,
             alive=self.agent.alive,
@@ -221,45 +221,146 @@ class HybridAgentWrapper(BaseAgentWrapper):
                 self.path_states = []  # Path completed, recalculate next time
                 return True, "Path completed"
         else:
+            # No safe path found - try exploration or shooting strategies
+            if self._try_exploration_before_desperate_shot(plan_agent):
+                self.action_count += 1
+                return True, "Exploring to gather more information"
+            
+            # Dead end situation - try shooting as last resort
+            if self._try_desperate_shot(plan_agent):
+                self.action_count += 1
+                return True, "Desperate shot - no safe path available!"
+            
             self.current_state = "stuck"
-            return False, "No safe path found"
+            return False, "No safe path found and no shooting options"
     
     def _try_shoot_if_beneficial(self, plan_agent):
-        """Try to shoot if it's beneficial"""
+        """Try to shoot if it's beneficial - using knowledge-based reasoning only"""
         if self.agent.arrow_hit != 0:
             return False
         
-        # Check if there's a Wumpus in line of sight
-        mi, mj = MOVE[self.agent.direction]
-        i, j = self.agent.position
-        in_sight_wumpus = []
-        i += mi
-        j += mj
-        while (0 <= i < self.N) and (0 <= j < self.N):
-            if "W" in self.game_map[i][j]:
-                in_sight_wumpus.append((i, j))
-            i += mi
-            j += mj
+        # Use knowledge-based reasoning instead of direct map access
+        potential_wumpus = plan_agent.possible_wumpus_in_line()
         
-        if in_sight_wumpus:
-            # Calculate cost with and without shooting
+        if potential_wumpus:
+            # Calculate cost with current knowledge
             path_with_wumpus = dijkstra(self.game_map, plan_agent)
             
-            # Create temporary map without the Wumpus
-            game_map_no_wumpus = deepcopy(self.game_map)
-            for wpos in in_sight_wumpus:
-                if "W" in game_map_no_wumpus[wpos[0]][wpos[1]]:
-                    game_map_no_wumpus[wpos[0]][wpos[1]].remove("W")
+            # Create temporary agent with assumption that Wumpus is shot
+            temp_agent = PlanningAgent(
+                position=self.agent.position,
+                direction=self.agent.direction,
+                alive=self.agent.alive,
+                arrow_hit=1,  # Simulate having shot
+                gold_obtain=self.agent.gold_obtain,
+                N=self.N,
+                kb=deepcopy(self.agent.kb)
+            )
             
-            path_no_wumpus = dijkstra(game_map_no_wumpus, plan_agent)
+            # Mark potential Wumpus locations as safe in temp KB
+            for wx, wy in potential_wumpus:
+                temp_agent.kb.add_fact(f"~W({wx}, {wy})")
+                temp_agent.kb.add_fact(f"Safe({wx}, {wy})")
+            temp_agent.kb.forward_chain()
+            
+            path_no_wumpus = dijkstra(self.game_map, temp_agent)
             
             # Simple cost comparison (number of steps)
             cost_with = len(path_with_wumpus) if path_with_wumpus else float('inf')
             cost_no = len(path_no_wumpus) + 1 if path_no_wumpus else float('inf')  # +1 for shooting
             
             if cost_no < cost_with:
+                print(f"Shooting beneficial: Path cost {cost_with} vs Shoot+Path cost {cost_no}")
                 self.agent.shoot()
                 return True
+        
+        return False
+    
+    def _try_exploration_before_desperate_shot(self, plan_agent):
+        """Try to explore unknown safe cells to gather more information before shooting"""
+        if self.agent.arrow_hit != 0:
+            return False
+        
+        # Look for unknown cells that are likely safe based on knowledge
+        current_pos = self.agent.position
+        
+        for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:  # Check adjacent cells
+            nx, ny = current_pos[0] + dx, current_pos[1] + dy
+            
+            if (0 <= nx < self.N and 0 <= ny < self.N and 
+                (nx, ny) not in self.visited):
+                
+                # Check if this cell is likely safe
+                safe_status = plan_agent.kb.is_premise_true(f"Safe({nx}, {ny})")
+                pit_status = plan_agent.kb.is_premise_true(f"P({nx}, {ny})")
+                wumpus_status = plan_agent.kb.is_premise_true(f"W({nx}, {ny})")
+                
+                # Move to cell if it's confirmed safe OR unknown but no danger indicators
+                if (safe_status is True or 
+                    (safe_status is None and pit_status is not True and wumpus_status is not True)):
+                    
+                    # Additional safety check: avoid cells near unknown stench/breeze if possible
+                    is_risky = False
+                    for vi, vj in self.visited:
+                        if abs(vi - nx) + abs(vj - ny) == 1:  # Adjacent to visited cell
+                            if (plan_agent.kb.is_premise_true(f"B({vi}, {vj})") is True or
+                                plan_agent.kb.is_premise_true(f"S({vi}, {vj})") is True):
+                                is_risky = True
+                                break
+                    
+                    if not is_risky:
+                        # Move to this exploration target
+                        desired_dir = self._direction_from_delta(dx, dy)
+                        if desired_dir:
+                            self._rotate_towards(desired_dir)
+                            self.agent.move_forward()
+                            self.visited.add((nx, ny))
+                            return True
+        
+        # If no safe adjacent exploration, look for stench cells to approach for shooting
+        for x in range(self.N):
+            for y in range(self.N):
+                if ((x, y) not in self.visited and 
+                    plan_agent.kb.is_premise_true(f"S({x}, {y})") is True):
+                    
+                    # Try to move towards this stench cell
+                    dx_stench = x - current_pos[0] 
+                    dy_stench = y - current_pos[1]
+                    
+                    # Move one step towards stench cell if safe
+                    if abs(dx_stench) > abs(dy_stench):
+                        step_dir = "S" if dx_stench > 0 else "N"
+                        step_dx, step_dy = (1, 0) if dx_stench > 0 else (-1, 0)
+                    else:
+                        step_dir = "E" if dy_stench > 0 else "W" 
+                        step_dx, step_dy = (0, 1) if dy_stench > 0 else (0, -1)
+                    
+                    next_x, next_y = current_pos[0] + step_dx, current_pos[1] + step_dy
+                    
+                    if (0 <= next_x < self.N and 0 <= next_y < self.N):
+                        # Check safety of next step
+                        if (plan_agent.kb.is_premise_true(f"P({next_x}, {next_y})") is not True and
+                            plan_agent.kb.is_premise_true(f"W({next_x}, {next_y})") is not True):
+                            
+                            self._rotate_towards(step_dir)
+                            self.agent.move_forward()
+                            self.visited.add((next_x, next_y))
+                            return True
+        
+        return False
+    
+    def _try_desperate_shot(self, plan_agent):
+        """Try shooting as a last resort when no safe path exists"""
+        if self.agent.arrow_hit != 0:
+            return False
+        
+        # Look for any potential Wumpus in shooting range
+        potential_wumpus = plan_agent.possible_wumpus_in_line()
+        
+        if potential_wumpus:
+            print(f"Desperate situation: Shooting at potential Wumpus {potential_wumpus}")
+            self.agent.shoot()
+            return True
         
         return False
     

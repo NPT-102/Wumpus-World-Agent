@@ -52,7 +52,7 @@ def main():
 
 
   # hybrid_agent_action_dynamic
-  agent = Agent(map=gam_map, N=4)
+  agent = Agent(environment_map=gam_map, N=4)
   result = hybrid_agent_action_dynamic(agent, gam_map, wumpus_position, pit_positions)
   print("Final result:", result)
 

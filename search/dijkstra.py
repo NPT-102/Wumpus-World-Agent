@@ -4,8 +4,12 @@ from agent.agent import Agent2, Env
 def agent_state(agent: Agent2):
     return (agent.position, agent.direction, agent.gold_obtain, agent.arrow_hit)
 
-def dijkstra(map, agent: Agent2):
-    env = Env(map)
+def dijkstra(environment_map, agent: Agent2):
+    """
+    Knowledge-based Dijkstra pathfinding that only uses the agent's knowledge base,
+    not omniscient map information.
+    """
+    env = Env(environment_map)
 
     q = [(0, agent)]
     total_cost = {agent_state(agent): 0}
@@ -35,25 +39,31 @@ def dijkstra(map, agent: Agent2):
 
         new_node = node.move_forward()
         if new_node.position != node.position:
-            if node.kb.is_premise_true(f"Safe{new_node.position}"):
-                neighbors.append((1, new_node))
-            else:
-                # Check if the new position has stench - lower penalty for exploration
-                ni, nj = new_node.position
-                if 0 <= ni < len(map) and 0 <= nj < len(map[0]) and 'S' in map[ni][nj]:
-                    neighbors.append((50, new_node))  # Lower penalty for stench cells
+            ni, nj = new_node.position
+            # Only use knowledge-based reasoning - no direct map access!
+            if 0 <= ni < len(environment_map) and 0 <= nj < len(environment_map[0]):
+                if node.kb.is_premise_true(f"Safe({ni}, {nj})"):
+                    # Known safe cell
+                    neighbors.append((1, new_node))
+                elif node.kb.is_premise_true(f"P({ni}, {nj})") or node.kb.is_premise_true(f"W({ni}, {nj})"):
+                    # Known dangerous cell - very high penalty
+                    neighbors.append((1000, new_node))
                 else:
-                    neighbors.append((501, new_node))  # High penalty for other unsafe moves
+                    # Unknown cell - moderate penalty for exploration
+                    neighbors.append((100, new_node))
 
         grab_node = node.grab_gold()
-        if grab_node.gold_obtain:
+        if grab_node.gold_obtain and not node.gold_obtain:
             neighbors.append((0, grab_node))
 
-        for weight, neighbor in neighbors:
+        for neighbor_cost, neighbor in neighbors:
             neighbor_state = agent_state(neighbor)
-            new_cost = cost + weight
-            if neighbor_state not in total_cost or total_cost[neighbor_state] > new_cost:
+            new_cost = cost + neighbor_cost
+            
+            if neighbor_state not in total_cost or new_cost < total_cost[neighbor_state]:
                 total_cost[neighbor_state] = new_cost
                 parent[neighbor_state] = state
-                node_map[neighbor_state] = neighbor  # lưu node object
+                node_map[neighbor_state] = neighbor
                 heapq.heappush(q, (new_cost, neighbor))
+
+    return None

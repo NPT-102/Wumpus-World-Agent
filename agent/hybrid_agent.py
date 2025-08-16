@@ -37,8 +37,12 @@ def calculate_path_cost(path_states):
             cost += abs(SCORE["turn"])  # xoay
     return cost
 
-def hybrid_agent_action(agent: Agent, game_map: list[list[list]]):
-    N = len(game_map)
+def hybrid_agent_action(agent: Agent, environment_map: list[list[list]]):
+    """
+    Knowledge-based hybrid agent that uses only its knowledge base for decision making.
+    No omniscient access to the full map.
+    """
+    N = len(environment_map)
     visited = set()
 
     while True:
@@ -67,36 +71,42 @@ def hybrid_agent_action(agent: Agent, game_map: list[list[list]]):
             kb=deepcopy(agent.kb)
         )
 
-        # Kiểm tra bắn Wumpus nếu có lợi
+        # Check for shooting opportunity - but only based on knowledge, not omniscient map access
         if agent.arrow_hit == 0:
-            mi, mj = AMOVE[agent.direction]
-            i, j = agent.position
-            in_sight_wumpus = []
-            i += mi
-            j += mj
-            while (0 <= i < N) and (0 <= j < N):
-                if "W" in game_map[i][j]:
-                    in_sight_wumpus.append((i, j))
-                i += mi
-                j += mj
-
-            if in_sight_wumpus:
-                path_with_wumpus = dijkstra(game_map, plan_agent)
-                game_map_no_wumpus = deepcopy(game_map)
-                for wpos in in_sight_wumpus:
-                    if "W" in game_map_no_wumpus[wpos[0]][wpos[1]]:
-                        game_map_no_wumpus[wpos[0]][wpos[1]].remove("W")
-                path_no_wumpus = dijkstra(game_map_no_wumpus, plan_agent)
+            potential_wumpus = plan_agent.possible_wumpus_in_line()
+            if potential_wumpus:
+                # Simple cost-benefit analysis without cheating
+                # If we have potential Wumpus targets, consider shooting
+                path_with_wumpus = dijkstra(environment_map, plan_agent)
+                
+                # Estimate cost if we could shoot the Wumpus (based on KB reasoning)
+                # Create a temporary knowledge base assuming Wumpus is dead
+                temp_agent = Agent2(
+                    position=agent.position,
+                    direction=agent.direction,
+                    alive=agent.alive,
+                    arrow_hit=1,  # Simulate having shot
+                    gold_obtain=agent.gold_obtain,
+                    N=N,
+                    kb=deepcopy(agent.kb)
+                )
+                # Mark the potential Wumpus location as safe in temp KB
+                for wx, wy in potential_wumpus:
+                    temp_agent.kb.add_fact(f"~W({wx}, {wy})")
+                    temp_agent.kb.add_fact(f"Safe({wx}, {wy})")
+                temp_agent.kb.forward_chain()
+                
+                path_no_wumpus = dijkstra(environment_map, temp_agent)
 
                 cost_with = calculate_path_cost(path_with_wumpus)
                 cost_no = calculate_path_cost(path_no_wumpus) + abs(SCORE["shoot"])
 
                 if cost_no < cost_with:
-                    print(f"Detour cost {cost_with} > Shooting cost {cost_no} → Shooting Wumpus at {in_sight_wumpus}")
+                    print(f"Detour cost {cost_with} > Shooting cost {cost_no} → Shooting Wumpus at {potential_wumpus}")
                     agent.shoot()
                     continue
 
-        path_states = dijkstra(game_map, plan_agent)
+        path_states = dijkstra(environment_map, plan_agent)
         if not path_states or len(path_states) < 2:
             print("No path found or already at goal.")
             break

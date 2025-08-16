@@ -30,10 +30,11 @@ class Agent:
 	position = (0, 0)
 	direction = "E" #East
 
-	def __init__(self, map: list[list[list]], N=8):
+	def __init__(self, environment_map: list[list[list]], N=8):
 		self.kb = KB(N=N)
 		self.N = N
-		self.map = map
+		# Store reference to environment for sensing only - agent cannot directly access this
+		self._environment_map = environment_map
 		i, j = self.position
 		self.kb.add_fact(
 			f"~B({i}, {j})", 
@@ -46,18 +47,24 @@ class Agent:
 
 	def perceive(self):
 		i, j = self.position
-		pos = self.map[i][j]
+		# Get percepts from environment - agent only knows what it senses at current position
+		pos = self._environment_map[i][j]
 
 		if "B" in pos:
 			self.kb.add_fact(f"B({i}, {j})")
 		else:
 			self.kb.add_fact(f"~B({i}, {j})")
+			# If no breeze -> adjacent cells don't have pits
+			for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
+				ni, nj = i + di, j + dj
+				if 0 <= ni < self.N and 0 <= nj < self.N:
+					self.kb.add_fact(f"~P({ni}, {nj})")
 
 		if "S" in pos:
 			self.kb.add_fact(f"S({i}, {j})")
 		else:
 			self.kb.add_fact(f"~S({i}, {j})")
-			# Nếu không còn Stench -> các ô kề không có Wumpus
+			# If no stench -> adjacent cells don't have Wumpus
 			for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
 				ni, nj = i + di, j + dj
 				if 0 <= ni < self.N and 0 <= nj < self.N:
@@ -74,17 +81,23 @@ class Agent:
 		i, j = (self.position[0] + move[0], self.position[1] + move[1])
 		print(f"Agent is trying to move {self.direction} to {i, j}.")
 		self.score += SCORE["move"]
+		
 		if (0 <= i < self.N) and (0 <= j < self.N):
-			if ("W" not in self.map[i][j]) and ("P" not in self.map[i][j]):
-				self.position = (i, j)
+			# Move to the position first
+			self.position = (i, j)
+			
+			# Then check what happens based on what's actually there
+			if ("W" in self._environment_map[i][j]) or ("P" in self._environment_map[i][j]):
+				if "W" in self._environment_map[i][j]:
+					print("Agent encountered a Wumpus and died.")
+				if "P" in self._environment_map[i][j]:
+					print("Agent fell into a pit and died.")
+				self.die()
+				return False
+			else:
+				# Safe move - update knowledge and perceive
 				self.perceive()
 				return True
-			if "W" in self.map[i][j]:
-				print("Agent encountered a Wumpus and died.")
-				self.die()
-			if "P" in self.map[i][j]:
-				print("Agent fell into a pit and died.")
-				self.die()
 		else:
 			print("Agent cannot move out of bounds.")
 		return False
@@ -111,7 +124,7 @@ class Agent:
 			return None
 
 		i, j = self.position
-		pos = self.map[i][j]
+		pos = self._environment_map[i][j]
 
 		if "G" in pos:
 			self.gold_obtain = True
@@ -135,19 +148,19 @@ class Agent:
 		i += mi
 		j += mj
 		while (0 <= i < self.N) and (0 <= j < self.N):
-			if "W" in self.map[i][j]:
-				self.map[i][j].remove("W")
+			if "W" in self._environment_map[i][j]:
+				self._environment_map[i][j].remove("W")
 				hit_any = True
 				print(f"Scream! Wumpus at {(i,j)} is dead.")
 
-				# Xóa Stench xung quanh Wumpus
+				# Remove Stench around dead Wumpus
 				for di, dj in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
 					ni, nj = i + di, j + dj
 					if (0 <= ni < self.N) and (0 <= nj < self.N):
-						if "S" in self.map[ni][nj]:
-							self.map[ni][nj].remove("S")
+						if "S" in self._environment_map[ni][nj]:
+							self._environment_map[ni][nj].remove("S")
 				
-				# Cập nhật KB: W chết, ô xung quanh không còn Stench
+				# Update KB: Wumpus dead, surrounding cells no longer have stench
 				self.kb.add_fact(f"~W({i}, {j})")
 				for ni, nj in self.kb.get_adjacent_cells(i, j):
 					self.kb.add_fact(f"~S({ni}, {nj})")
@@ -298,13 +311,13 @@ class Agent2:
 
 	
 class Env:
-	def __init__(self, map):
-		self.map = map
+	def __init__(self, environment_map):
+		self._environment_map = environment_map
 
 	def get_percept(self, pos):
 		percepts = []
 		i, j = pos
-		square = self.map[i][j]
+		square = self._environment_map[i][j]
 
 		if ("W" in square) or ("P" in square):
 			return [f"Deadly{pos}"]

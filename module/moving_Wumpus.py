@@ -21,15 +21,16 @@ def move_wumpus(game_map, current_position, pit_positions, wumpus_positions):
     return current_position
 
 
-def is_valid_move(game_map, position, old_pos, wumpus_positions, pit_positions):
+def is_valid_move(game_map, position, pit_positions, old_pos, wumpus_positions):
+    """Check if Wumpus can move to this position"""
     x, y = position
     return (
         0 <= x < len(game_map)
         and 0 <= y < len(game_map[0])
-        and position not in pit_positions
-        and position != old_pos
-        and position not in wumpus_positions  # tránh trùng với Wumpus khác
-        and 'G' not in game_map[x][y]        # tránh đi vào ô có vàng
+        and position not in pit_positions  # Don't move into pits
+        and position != old_pos            # Don't stay in same place
+        and position not in wumpus_positions  # Don't overlap with other Wumpus
+        and 'G' not in game_map[x][y]      # Don't move into gold cell
     )
 
 
@@ -43,16 +44,17 @@ def update_wumpus_position(agent, game_map, wumpus_positions, pit_positions, wum
 
     new_positions = []
 
-    # --- XOÁ W và tín hiệu xung quanh W cũ ---
+    # --- XOÁ W và tín hiệu STENCH xung quanh W cũ ---
     for i, j in wumpus_positions:
         # Xoá W
         game_map[i][j] = [c for c in game_map[i][j] if c != 'W']
-        # Xoá tín hiệu S/B/P xung quanh
-        for di in [-1,0,1]:
-            for dj in [-1,0,1]:
-                ni, nj = i+di, j+dj
-                if 0<=ni<len(game_map) and 0<=nj<len(game_map[0]):
-                    game_map[ni][nj] = [c for c in game_map[ni][nj] if c not in ['S','B','P']]
+        # Chỉ xoá tín hiệu STENCH (S) xung quanh, KHÔNG xoá pit (P) hoặc breeze (B)
+        # CHỈ XOÁ STENCH TỪ CÁC Ô ADJACENT, KHÔNG XOÁ TỪ TẤT CẢ
+        for di, dj in [(-1,0), (1,0), (0,-1), (0,1)]:  # Chỉ adjacent, không diagonal
+            ni, nj = i+di, j+dj
+            if 0<=ni<len(game_map) and 0<=nj<len(game_map[0]):
+                # CHỈ xoá stench, giữ nguyên pit và breeze
+                game_map[ni][nj] = [c for c in game_map[ni][nj] if c != 'S']
 
     # Di chuyển Wumpus
     for idx, w_pos in enumerate(wumpus_positions):
@@ -66,20 +68,44 @@ def update_wumpus_position(agent, game_map, wumpus_positions, pit_positions, wum
             print(f"Wumpus moved from {w_pos} to {new_pos}")
         new_positions.append(new_pos)
 
-    # --- Thêm W và tín hiệu xung quanh vị trí mới ---
+    # --- Thêm W và CHỈ STENCH xung quanh vị trí mới ---
     for idx, (i,j) in enumerate(new_positions):
         if wumpus_alive[idx]:
             if 'W' not in game_map[i][j]:
                 game_map[i][j].append('W')
-            # Thêm tín hiệu S/B/P quanh W mới
+            # CHỈ thêm stench (S) quanh W mới, KHÔNG thêm pit hoặc breeze
             for di,dj in [(-1,0),(1,0),(0,-1),(0,1)]:
                 ni,nj = i+di,j+dj
                 if 0<=ni<len(game_map) and 0<=nj<len(game_map[0]):
                     if 'S' not in game_map[ni][nj]:
                         game_map[ni][nj].append('S')
 
+    # Note: Removed restore_pit_indicators call to prevent potential hanging
+    # Pits should remain stable as we only remove/add stench, not pit indicators
+
     print("Before Wumpus move:", wumpus_positions)
     print("After Wumpus move:", new_positions)
     print_map(game_map)
 
     return new_positions
+
+
+def restore_pit_indicators(game_map, pit_positions):
+    """Ensure pits and their breezes are properly maintained"""
+    if not pit_positions:  # Safety check
+        return
+        
+    # First, ensure all pit positions have 'P'
+    for i, j in pit_positions:
+        if 0 <= i < len(game_map) and 0 <= j < len(game_map[0]):  # Bounds check
+            if 'P' not in game_map[i][j]:
+                game_map[i][j].append('P')
+    
+    # Then, ensure breeze around pits
+    for i, j in pit_positions:
+        if 0 <= i < len(game_map) and 0 <= j < len(game_map[0]):  # Bounds check
+            for di, dj in [(-1,0), (1,0), (0,-1), (0,1)]:
+                ni, nj = i + di, j + dj
+                if 0 <= ni < len(game_map) and 0 <= nj < len(game_map[0]):
+                    if 'B' not in game_map[ni][nj]:
+                        game_map[ni][nj].append('B')
