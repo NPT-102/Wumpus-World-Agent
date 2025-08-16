@@ -11,6 +11,32 @@ class States:
             self.knowledge = []
 
     def add(self, agent, result, pit, wumpus, knowledge=None):
+        """
+        Ghi lại trạng thái mới của trò chơi sau khi agent vừa hoàn thành 1 hành động
+
+        Parameters
+        ----------
+        agent : Agent
+            Đối tượng agent hiện tại, chứa thông tin vị trí và hướng nhìn.
+        result : str
+            Kết quả hành động vừa thực hiện. Các giá trị hợp lệ:
+            - 'killed' : agent vừa giết được một Wumpus.
+            - 'missed' : agent vừa bắn nhưng không trúng Wumpus.
+            - 'gold'   : agent vừa nhặt được vàng.
+            - 'escaped': agent vừa thoát khỏi mê cung.
+            - 'die'    : agent vừa chết
+        pit : list[tuple[int, int]]
+            Danh sách tọa độ các hố trong bản đồ.
+        wumpus : list[tuple[int, int]]
+            Danh sách tọa độ các Wumpus còn sống trong bản đồ.
+        knowledge : optional
+            knowledge base chứa fact các ô safe và deadly.
+
+        Returns
+        -------
+        None
+            Hàm này chỉ ghi lại trạng thái, không trả về giá trị.
+        """
         def kb_to_grid_string(kb, N):
             #  "$" = Safe, "!" = Deadly, "-" = unknown
             grid = ["-"] * (N * N)
