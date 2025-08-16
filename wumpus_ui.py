@@ -46,8 +46,8 @@ class WumpusWorldUI:
         
         # Map size selector
         ttk.Label(control_frame, text="Map Size:").pack(side=tk.LEFT, padx=(0, 5))
-        self.size_var = tk.StringVar(value="4")
-        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["4", "5", "6", "7", "8", "9", "10"], width=5, state="readonly")
+        self.size_var = tk.StringVar(value="8")
+        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["8", "9", "10", "11", "12"], width=5, state="readonly")
         self.size_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.size_combo.bind('<<ComboboxSelected>>', self.on_size_change)
         
