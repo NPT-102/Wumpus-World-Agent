@@ -27,7 +27,7 @@ class WumpusWorldUI:
         self.game_finished = False
         
         # UI settings
-        self.grid_size = 4  # This will be updated from combo box
+        self.grid_size = 8  # This will be updated from combo box
         self.cell_size = 80
         
         # Create UI components
