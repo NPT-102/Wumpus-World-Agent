@@ -7,6 +7,7 @@ def random_agent_action(agent: Agent, gam_map: list[list[int]]):
     """
     actions = ["move", "shoot", "grab", "climb"]
     action = random.choice(actions)
+    result = ''
     if not agent.alive:
         print("Agent is no longer alive.")
         return None
@@ -22,20 +23,24 @@ def random_agent_action(agent: Agent, gam_map: list[list[int]]):
     elif action == "shoot":
         if agent.shoot():
             print("Agent shot an arrow.")
+            result = 'killed'
         else:
             print("Agent missed the shot.")
+            result = 'missed'
     elif action == "grab":
         if agent.grab_gold():
             print("Agent grabbed gold.")
+            result = 'gold'
         else:
             print("No gold to grab.")
     elif action == "climb":
         if agent.escape():
             print("Agent successfully escaped the cave.")
+            result = 'escaped'
         else:
             print("Agent cannot climb out of the cave.")
 
-    return action
+    return action, result
 
 def is_valid_move(gam_map, position):
     x, y = position
@@ -52,8 +57,8 @@ def random_agent(gam_map, wumpus_position, pit_positions, states):
         if not agent_instance.alive:
             print("Agent is no longer alive.")
             break
-        action = random_agent_action(agent_instance, gam_map)
-        states.add(agent_instance, action)
+        action, result = random_agent_action(agent_instance, gam_map)
+        states.add(agent_instance, result, pit_positions, wumpus_position)
         if action == "climb" and agent_instance.position == (0, 0) and not agent_instance.gold_obtain:
             print("Agent has escaped without gold.")
             break
