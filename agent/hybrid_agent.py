@@ -67,7 +67,7 @@ def hybrid_agent_action(agent: Agent, game_map: list[list[list]]):
             kb=deepcopy(agent.kb)
         )
 
-        #  Kiểm tra bắn Wumpus nếu có lợi
+        # Kiểm tra bắn Wumpus nếu có lợi
         if agent.arrow_hit == 0:
             mi, mj = AMOVE[agent.direction]
             i, j = agent.position
