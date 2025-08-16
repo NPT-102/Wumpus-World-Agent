@@ -1,111 +1,129 @@
 # module/moving_Wumpus.py
 import random
 from copy import deepcopy
-from env_simulator.generateMap import print_map
 
-def move_wumpus(game_map, current_position, pit_positions, wumpus_positions):
+def move_wumpus(game_map, current_position, pit_positions, other_wumpus_positions):
     """
-    Di chuyển Wumpus sang một ô hợp lệ, không trùng với pit hoặc Wumpus khác.
-    Không cho Wumpus đi vào ô (0,0).
+    Move Wumpus to a valid cell - Wumpuses have limited local knowledge
+    They can sense adjacent pits but don't have perfect map knowledge
     """
     directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
     random.shuffle(directions)
 
     for move in directions:
         new_position = (current_position[0] + move[0], current_position[1] + move[1])
-        if is_valid_move(game_map, new_position, pit_positions, current_position, wumpus_positions):
-            # Không cho Wumpus đi vào ô (0,0)
+        if is_valid_move(game_map, new_position, pit_positions, current_position, other_wumpus_positions):
+            # Wumpuses avoid starting position (0,0) by instinct
             if new_position == (0, 0):
                 continue
             return new_position
+    
+    # If no valid moves, stay in place
     return current_position
 
 
-def is_valid_move(game_map, position, pit_positions, old_pos, wumpus_positions):
-    """Check if Wumpus can move to this position"""
+def is_valid_move(game_map, position, pit_positions, old_pos, other_wumpus_positions):
+    """Check if Wumpus can move to this position with limited knowledge"""
     x, y = position
-    return (
-        0 <= x < len(game_map)
-        and 0 <= y < len(game_map[0])
-        and position not in pit_positions  # Don't move into pits
-        and position != old_pos            # Don't stay in same place
-        and position not in wumpus_positions  # Don't overlap with other Wumpus
-        and 'G' not in game_map[x][y]      # Don't move into gold cell
-    )
+    
+    # Basic boundary check
+    if not (0 <= x < len(game_map) and 0 <= y < len(game_map[0])):
+        return False
+    
+    # Don't stay in same place
+    if position == old_pos:
+        return False
+    
+    # Avoid other Wumpuses (they can sense each other nearby)
+    if position in other_wumpus_positions:
+        return False
+    
+    # Wumpuses can sense and avoid pits adjacent to their current position
+    for pit_pos in pit_positions:
+        if position == pit_pos:
+            return False
+    
+    return True
 
 
-# Trong module/moving_Wumpus.py
-def update_wumpus_position(agent, game_map, wumpus_positions, pit_positions, wumpus_alive=None):
+def update_wumpus_position(agent, environment, wumpus_positions, pit_positions, wumpus_alive=None):
+    """Update Wumpus positions using environment interface"""
     if not agent.alive or not wumpus_positions:
         return wumpus_positions
 
     if wumpus_alive is None:
-        wumpus_alive = [True]*len(wumpus_positions)
+        wumpus_alive = [True] * len(wumpus_positions)
 
     new_positions = []
 
-    # --- XOÁ W và tín hiệu STENCH xung quanh W cũ ---
-    for i, j in wumpus_positions:
-        # Xoá W
-        game_map[i][j] = [c for c in game_map[i][j] if c != 'W']
-        # Chỉ xoá tín hiệu STENCH (S) xung quanh, KHÔNG xoá pit (P) hoặc breeze (B)
-        # CHỈ XOÁ STENCH TỪ CÁC Ô ADJACENT, KHÔNG XOÁ TỪ TẤT CẢ
-        for di, dj in [(-1,0), (1,0), (0,-1), (0,1)]:  # Chỉ adjacent, không diagonal
-            ni, nj = i+di, j+dj
-            if 0<=ni<len(game_map) and 0<=nj<len(game_map[0]):
-                # CHỈ xoá stench, giữ nguyên pit và breeze
-                game_map[ni][nj] = [c for c in game_map[ni][nj] if c != 'S']
-
-    # Di chuyển Wumpus
+    # Move each living Wumpus
     for idx, w_pos in enumerate(wumpus_positions):
         if not wumpus_alive[idx]:
             new_positions.append(w_pos)
             continue
 
-        other_wumpus = [p for jdx, p in enumerate(wumpus_positions) if jdx != idx and wumpus_alive[jdx]]
-        new_pos = move_wumpus(game_map, w_pos, pit_positions, other_wumpus)
+        # Get other living Wumpus positions
+        other_wumpus = [p for jdx, p in enumerate(wumpus_positions) 
+                       if jdx != idx and wumpus_alive[jdx]]
+        
+        # Move Wumpus with limited knowledge
+        new_pos = move_wumpus(environment.game_map, w_pos, pit_positions, other_wumpus)
+        
         if new_pos != w_pos:
             print(f"Wumpus moved from {w_pos} to {new_pos}")
+            
+            # Update environment through proper interface
+            # Remove Wumpus from old position
+            if 'W' in environment.game_map[w_pos[0]][w_pos[1]]:
+                environment.game_map[w_pos[0]][w_pos[1]].remove('W')
+            
+            # Add Wumpus to new position
+            if 'W' not in environment.game_map[new_pos[0]][new_pos[1]]:
+                environment.game_map[new_pos[0]][new_pos[1]].append('W')
+            
+            # Update stench patterns through environment
+            update_stench_patterns(environment, w_pos, new_pos)
+        
         new_positions.append(new_pos)
 
-    # --- Thêm W và CHỈ STENCH xung quanh vị trí mới ---
-    for idx, (i,j) in enumerate(new_positions):
-        if wumpus_alive[idx]:
-            if 'W' not in game_map[i][j]:
-                game_map[i][j].append('W')
-            # CHỈ thêm stench (S) quanh W mới, KHÔNG thêm pit hoặc breeze
-            for di,dj in [(-1,0),(1,0),(0,-1),(0,1)]:
-                ni,nj = i+di,j+dj
-                if 0<=ni<len(game_map) and 0<=nj<len(game_map[0]):
-                    if 'S' not in game_map[ni][nj]:
-                        game_map[ni][nj].append('S')
-
-    # Note: Removed restore_pit_indicators call to prevent potential hanging
-    # Pits should remain stable as we only remove/add stench, not pit indicators
-
-    print("Before Wumpus move:", wumpus_positions)
-    print("After Wumpus move:", new_positions)
-    print_map(game_map)
-
+    print("Wumpus positions updated:", new_positions)
     return new_positions
 
 
-def restore_pit_indicators(game_map, pit_positions):
-    """Ensure pits and their breezes are properly maintained"""
-    if not pit_positions:  # Safety check
-        return
-        
-    # First, ensure all pit positions have 'P'
-    for i, j in pit_positions:
-        if 0 <= i < len(game_map) and 0 <= j < len(game_map[0]):  # Bounds check
-            if 'P' not in game_map[i][j]:
-                game_map[i][j].append('P')
+def update_stench_patterns(environment, old_pos, new_pos):
+    """Update stench patterns when Wumpus moves"""
+    N = len(environment.game_map)
     
-    # Then, ensure breeze around pits
-    for i, j in pit_positions:
-        if 0 <= i < len(game_map) and 0 <= j < len(game_map[0]):  # Bounds check
-            for di, dj in [(-1,0), (1,0), (0,-1), (0,1)]:
-                ni, nj = i + di, j + dj
-                if 0 <= ni < len(game_map) and 0 <= nj < len(game_map[0]):
-                    if 'B' not in game_map[ni][nj]:
-                        game_map[ni][nj].append('B')
+    # Remove stench around old position (if no other Wumpus there)
+    old_adjacent = get_adjacent_positions(old_pos, N)
+    for adj_pos in old_adjacent:
+        i, j = adj_pos
+        # Check if any other Wumpus can cause stench here
+        has_other_wumpus_nearby = False
+        other_adjacent = get_adjacent_positions(adj_pos, N)
+        for other_adj in other_adjacent:
+            if other_adj != old_pos and 'W' in environment.game_map[other_adj[0]][other_adj[1]]:
+                has_other_wumpus_nearby = True
+                break
+        
+        # Remove stench only if no other Wumpus causes it
+        if not has_other_wumpus_nearby and 'S' in environment.game_map[i][j]:
+            environment.game_map[i][j].remove('S')
+    
+    # Add stench around new position
+    new_adjacent = get_adjacent_positions(new_pos, N)
+    for adj_pos in new_adjacent:
+        i, j = adj_pos
+        if 'S' not in environment.game_map[i][j]:
+            environment.game_map[i][j].append('S')
+
+
+def get_adjacent_positions(position, N):
+    """Get valid adjacent positions"""
+    i, j = position
+    adjacent = []
+    for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        ni, nj = i + di, j + dj
+        if 0 <= ni < N and 0 <= nj < N:
+            adjacent.append((ni, nj))
+    return adjacent

@@ -1,149 +1,310 @@
-# agent/hybrid_agent.py
-from agent.agent import Agent, Agent2, DIRECTION as ADIR, MOVE as AMOVE, SCORE
-from search.dijkstra import dijkstra
-from copy import deepcopy
+"""
+Hybrid Agent for Wumpus World - combines basic logic with some randomness
+"""
+import random
+from agent.agent import MOVE, DIRECTION
 
-def _rotate_once_towards(agent: Agent, target_dir: str):
-    cur_idx = ADIR[agent.direction]
-    des_idx = ADIR[target_dir]
-    if cur_idx == des_idx:
-        return False
-    if (cur_idx + 1) % 4 == des_idx:
-        agent.turn_right()
-        return True
-    if (cur_idx - 1) % 4 == des_idx:
-        agent.turn_left()
-        return True
-    agent.turn_right()
-    return True
-
-def _dir_from_delta(di: int, dj: int) -> str | None:
-    for d, vec in AMOVE.items():
-        if vec == (di, dj):
-            return d
-    return None
-
-def calculate_path_cost(path_states):
-    """Tính chi phí điểm của path (−1 mỗi bước đi hoặc quay, grab = 0)."""
-    if not path_states:
-        return float("inf")
-    cost = 0
-    for idx in range(1, len(path_states)):
-        prev = path_states[idx - 1]
-        cur = path_states[idx]
-        if cur.position != prev.position:
-            cost += abs(SCORE["move"])  # di chuyển
-        elif cur.direction != prev.direction:
-            cost += abs(SCORE["turn"])  # xoay
-    return cost
-
-def hybrid_agent_action(agent: Agent, environment_map: list[list[list]]):
-    """
-    Knowledge-based hybrid agent that uses only its knowledge base for decision making.
-    No omniscient access to the full map.
-    """
-    N = len(environment_map)
-    visited = set()
-
-    while True:
-        if not agent.alive:
-            print("Agent died! Game Over.")
-            break
-
-        agent.perceive()
-        visited.add(agent.position)
-
-        if agent.grab_gold():
-            print(f"Grabbed gold at {agent.position}!")
-
-        if agent.gold_obtain and agent.position == (0, 0):
-            agent.escape()
-            print("Escaped successfully!")
-            break
-
-        plan_agent = Agent2(
-            position=agent.position,
-            direction=agent.direction,
-            alive=agent.alive,
-            arrow_hit=agent.arrow_hit,
-            gold_obtain=agent.gold_obtain,
-            N=N,
-            kb=deepcopy(agent.kb)
-        )
-
-        # Check for shooting opportunity - but only based on knowledge, not omniscient map access
-        if agent.arrow_hit == 0:
-            potential_wumpus = plan_agent.possible_wumpus_in_line()
-            if potential_wumpus:
-                # Simple cost-benefit analysis without cheating
-                # If we have potential Wumpus targets, consider shooting
-                path_with_wumpus = dijkstra(environment_map, plan_agent)
-                
-                # Estimate cost if we could shoot the Wumpus (based on KB reasoning)
-                # Create a temporary knowledge base assuming Wumpus is dead
-                temp_agent = Agent2(
-                    position=agent.position,
-                    direction=agent.direction,
-                    alive=agent.alive,
-                    arrow_hit=1,  # Simulate having shot
-                    gold_obtain=agent.gold_obtain,
-                    N=N,
-                    kb=deepcopy(agent.kb)
-                )
-                # Mark the potential Wumpus location as safe in temp KB
-                for wx, wy in potential_wumpus:
-                    temp_agent.kb.add_fact(f"~W({wx}, {wy})")
-                    temp_agent.kb.add_fact(f"Safe({wx}, {wy})")
-                temp_agent.kb.forward_chain()
-                
-                path_no_wumpus = dijkstra(environment_map, temp_agent)
-
-                cost_with = calculate_path_cost(path_with_wumpus)
-                cost_no = calculate_path_cost(path_no_wumpus) + abs(SCORE["shoot"])
-
-                if cost_no < cost_with:
-                    print(f"Detour cost {cost_with} > Shooting cost {cost_no} → Shooting Wumpus at {potential_wumpus}")
-                    agent.shoot()
-                    continue
-
-        path_states = dijkstra(environment_map, plan_agent)
-        if not path_states or len(path_states) < 2:
-            print("No path found or already at goal.")
-            break
-
-        next_state = path_states[1]
-
-        if next_state.position == agent.position:
-            target_dir = next_state.direction
-            if target_dir != agent.direction:
-                _rotate_once_towards(agent, target_dir)
+class HybridAgent:
+    def __init__(self, base_agent):
+        self.agent = base_agent
+        self.visited_positions = {(0, 0)}
+        self.action_count = 0
+        self.max_actions = 300
+        self.known_safe = {(0, 0)}  # Simple safe position tracking
+        self.known_dangerous = set()
+        self.exploring = True
+        self.returning_home = False
+        self.last_actions = []  # Track recent actions to avoid loops
+        
+    def step(self):
+        """Execute one hybrid step combining logic and randomness"""
+        if not self.agent.alive or self.action_count >= self.max_actions:
+            return False, "Game Over"
+        
+        self.visited_positions.add(self.agent.position)
+        
+        # Get current percepts
+        percepts = self.agent.environment.get_percept(self.agent.position)
+        
+        # Check for gold
+        if "Glitter" in percepts and not self.agent.gold_obtain:
+            if self.agent.grab_gold():
+                self.returning_home = True
+                self.exploring = False
+                return True, f"Grabbed gold at {self.agent.position}! Now returning home."
+        
+        # Check if reached home with gold
+        if self.agent.gold_obtain and self.agent.position == (0, 0):
+            self.agent.score += 1000
+            return False, f"Successfully returned home with gold! Final score: {self.agent.score}"
+        
+        # Update knowledge based on percepts
+        self._update_knowledge(percepts)
+        
+        # Choose action with hybrid approach
+        action = self._choose_hybrid_action(percepts)
+        
+        self.action_count += 1
+        self._track_action(action)
+        
+        return self._execute_action(action)
+    
+    def _update_knowledge(self, percepts):
+        """Simple knowledge update based on percepts"""
+        current_pos = self.agent.position
+        
+        # Current position is safe if we're here and alive
+        self.known_safe.add(current_pos)
+        
+        # If no breeze or stench, adjacent positions might be safer
+        if "Breeze" not in percepts and "Stench" not in percepts:
+            directions = ["N", "E", "S", "W"]
+            for direction in directions:
+                move = MOVE[direction]
+                adj_pos = (current_pos[0] + move[0], current_pos[1] + move[1])
+                if self.agent.environment.is_valid_position(adj_pos):
+                    self.known_safe.add(adj_pos)
+        
+        # If there's danger, be more cautious about adjacent positions
+        if "Breeze" in percepts or "Stench" in percepts:
+            directions = ["N", "E", "S", "W"]
+            for direction in directions:
+                move = MOVE[direction]
+                adj_pos = (current_pos[0] + move[0], current_pos[1] + move[1])
+                if (self.agent.environment.is_valid_position(adj_pos) and 
+                    adj_pos not in self.visited_positions):
+                    self.known_dangerous.add(adj_pos)
+    
+    def _choose_hybrid_action(self, percepts):
+        """Choose action with hybrid logic - 60% logic, 40% randomness"""
+        if random.random() < 0.6:  # 60% logical decisions
+            return self._logical_action(percepts)
+        else:  # 40% random decisions
+            return self._random_action()
+    
+    def _logical_action(self, percepts):
+        """Make a logical decision"""
+        current_pos = self.agent.position
+        
+        # If returning home, try to go towards (0,0)
+        if self.returning_home:
+            if self._can_move_towards_home():
+                return "move_home"
+            elif random.choice([True, False]):
+                return "turn_left"
             else:
-                agent.grab_gold()
-            continue
-
-        cur_i, cur_j = agent.position
-        nxt_i, nxt_j = next_state.position
-        di, dj = (nxt_i - cur_i, nxt_j - cur_j)
-        desired_dir = _dir_from_delta(di, dj)
-
-        if desired_dir is None:
-            print("[ERROR] Next step is not an adjacent move; aborting.")
-            break
-
-        spins = 0
-        while agent.direction != desired_dir and spins < 4:
-            _rotate_once_towards(agent, desired_dir)
-            spins += 1
-
-        if agent.direction == desired_dir:
-            agent.move_forward()
+                return "turn_right"
+        
+        # If exploring and detect loop, try to break it
+        if self._is_in_loop():
+            if random.choice([True, False]):
+                return "turn_left"
+            else:
+                return "turn_right"
+        
+        # If there's danger and we have arrow, consider shooting
+        if ("Stench" in percepts and self.agent.arrow_hit == 0 and 
+            random.random() < 0.3):  # 30% chance to shoot when sensing Wumpus
+            return "shoot"
+        
+        # Try to move to safe unvisited position
+        if self._can_move_to_safe_unvisited():
+            return "move_safe"
+        
+        # Try to move forward if seems safe
+        if self._is_forward_reasonably_safe():
+            return "move_forward"
+        
+        # Otherwise turn to explore new direction
+        if random.choice([True, False]):
+            return "turn_left"
         else:
-            print("[ERROR] Could not align direction; aborting.")
-            break
-
-    return {
-        "final_position": agent.position,
-        "score": agent.score,
-        "gold": agent.gold_obtain,
-        "alive": agent.alive,
-    }
+            return "turn_right"
+    
+    def _random_action(self):
+        """Make a random decision"""
+        actions = ["move_forward", "turn_left", "turn_right"]
+        if self.agent.arrow_hit == 0:  # Add shoot if has arrow
+            actions.append("shoot")
+        return random.choice(actions)
+    
+    def _execute_action(self, action):
+        """Execute the chosen action"""
+        if action == "move_home":
+            if self._try_move_towards_home():
+                return True, f"Moving towards home, now at {self.agent.position}"
+            else:
+                self.agent.turn_left()
+                return True, "Blocked moving home, turned left"
+        
+        elif action == "move_safe":
+            if self._try_move_to_safe_position():
+                return True, f"Moved to safe position {self.agent.position}"
+            else:
+                self.agent.turn_right()
+                return True, "No safe move available, turned right"
+        
+        elif action == "move_forward":
+            if self.agent.move_forward():
+                return True, f"Moved forward to {self.agent.position}"
+            else:
+                self.agent.turn_left()
+                return True, "Blocked moving forward, turned left"
+        
+        elif action == "turn_left":
+            self.agent.turn_left()
+            return True, f"Turned left to face {self.agent.direction}"
+        
+        elif action == "turn_right":
+            self.agent.turn_right()
+            return True, f"Turned right to face {self.agent.direction}"
+        
+        elif action == "shoot":
+            if self.agent.arrow_hit == 0:
+                self.agent.shoot()
+                return True, "Shot arrow"
+            else:
+                self.agent.turn_left()
+                return True, "No arrow, turned left instead"
+        
+        return True, "Action completed"
+    
+    def _can_move_towards_home(self):
+        """Check if can move towards (0,0)"""
+        current_pos = self.agent.position
+        target = (0, 0)
+        
+        # Calculate direction towards home
+        dx = target[0] - current_pos[0]
+        dy = target[1] - current_pos[1]
+        
+        if dx == 0 and dy == 0:
+            return False
+        
+        # Find best direction
+        if abs(dx) > abs(dy):
+            needed_direction = "W" if dx < 0 else "E"
+        else:
+            needed_direction = "N" if dy < 0 else "S"
+        
+        # Check if facing right direction
+        if self.agent.direction == needed_direction:
+            move = MOVE[self.agent.direction]
+            next_pos = (current_pos[0] + move[0], current_pos[1] + move[1])
+            return (self.agent.environment.is_valid_position(next_pos) and 
+                    next_pos not in self.known_dangerous)
+        
+        return False
+    
+    def _try_move_towards_home(self):
+        """Try to move one step towards home"""
+        current_pos = self.agent.position
+        target = (0, 0)
+        
+        dx = target[0] - current_pos[0]
+        dy = target[1] - current_pos[1]
+        
+        if dx == 0 and dy == 0:
+            return True
+        
+        # Turn towards home if not facing right direction
+        if abs(dx) > abs(dy):
+            needed_direction = "W" if dx < 0 else "E"
+        else:
+            needed_direction = "N" if dy < 0 else "S"
+        
+        if self.agent.direction != needed_direction:
+            # Turn towards needed direction
+            self._turn_towards(needed_direction)
+            return False
+        
+        # Try to move
+        return self.agent.move_forward()
+    
+    def _can_move_to_safe_unvisited(self):
+        """Check if can move to a safe unvisited position"""
+        move = MOVE[self.agent.direction]
+        next_pos = (self.agent.position[0] + move[0], self.agent.position[1] + move[1])
+        
+        return (self.agent.environment.is_valid_position(next_pos) and
+                next_pos not in self.visited_positions and
+                next_pos in self.known_safe)
+    
+    def _try_move_to_safe_position(self):
+        """Try to move to a safe position"""
+        move = MOVE[self.agent.direction]
+        next_pos = (self.agent.position[0] + move[0], self.agent.position[1] + move[1])
+        
+        if (self.agent.environment.is_valid_position(next_pos) and
+            next_pos not in self.known_dangerous):
+            return self.agent.move_forward()
+        return False
+    
+    def _is_forward_reasonably_safe(self):
+        """Check if moving forward seems reasonably safe"""
+        move = MOVE[self.agent.direction]
+        next_pos = (self.agent.position[0] + move[0], self.agent.position[1] + move[1])
+        
+        return (self.agent.environment.is_valid_position(next_pos) and
+                next_pos not in self.known_dangerous)
+    
+    def _is_in_loop(self):
+        """Simple loop detection"""
+        if len(self.last_actions) >= 4:
+            recent = self.last_actions[-4:]
+            # Check for simple patterns like turn-turn-turn-turn
+            if recent == ["turn_left", "turn_left", "turn_left", "turn_left"]:
+                return True
+            if recent == ["turn_right", "turn_right", "turn_right", "turn_right"]:
+                return True
+            # Check for back-and-forth movement patterns
+            if len(set(recent)) == 2 and recent[0] == recent[2] and recent[1] == recent[3]:
+                return True
+        return False
+    
+    def _turn_towards(self, target_direction):
+        """Turn towards the target direction"""
+        directions = ["N", "E", "S", "W"]
+        current_idx = directions.index(self.agent.direction)
+        target_idx = directions.index(target_direction)
+        
+        diff = (target_idx - current_idx) % 4
+        if diff == 1 or diff == -3:
+            self.agent.turn_right()
+        elif diff == 3 or diff == -1:
+            self.agent.turn_left()
+        elif diff == 2:
+            self.agent.turn_left()  # Turn left twice (will need another call)
+    
+    def _track_action(self, action):
+        """Track recent actions for loop detection"""
+        self.last_actions.append(action)
+        if len(self.last_actions) > 10:  # Keep only recent actions
+            self.last_actions.pop(0)
+    
+    def get_current_state(self):
+        """Get current state for UI display"""
+        return {
+            'position': self.agent.position,
+            'direction': self.agent.direction,
+            'score': self.agent.score,
+            'alive': self.agent.alive,
+            'gold': self.agent.gold_obtain,
+            'arrow': self.agent.arrow_hit,
+            'visited': list(self.visited_positions),
+            'action_count': self.action_count,
+            'safe_positions': list(self.known_safe),
+            'dangerous_positions': list(self.known_dangerous),
+            'state': 'returning_home' if self.returning_home else 'exploring',
+            'agent_type': 'Hybrid'
+        }
+    
+    def get_final_result(self):
+        """Get final game result"""
+        return {
+            'final_position': self.agent.position,
+            'score': self.agent.score,
+            'gold': self.agent.gold_obtain,
+            'alive': self.agent.alive,
+            'actions': self.action_count
+        }

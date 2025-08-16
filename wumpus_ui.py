@@ -4,9 +4,13 @@ import threading
 import time
 from PIL import Image, ImageTk
 from env_simulator.generateMap import WumpusWorldGenerator, print_map
+from env_simulator.environment import WumpusEnvironment
 from agent.agent import Agent
-from stepwise_agent import StepByStepHybridAgent
-from agent_wrapper import RandomAgentWrapper, HybridAgentWrapper, DynamicAgentWrapper
+from agent.intelligent_agent_wrapper import IntelligentAgentWrapper
+from agent.intelligent_agent_dynamic import IntelligentAgentDynamic
+from agent.random_agent import RandomAgent
+from agent.hybrid_agent import HybridAgent
+from agent.hybrid_agent_action_dynamic import HybridAgentDynamic
 import re
 
 class WumpusWorldUI:
@@ -45,18 +49,18 @@ class WumpusWorldUI:
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Map size selector
+        # Map size selector (fixed at 4x4 as requested)
         ttk.Label(control_frame, text="Map Size:").pack(side=tk.LEFT, padx=(0, 5))
-        self.size_var = tk.StringVar(value="8")
-        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["8", "9", "10", "11", "12"], width=5, state="readonly")
+        self.size_var = tk.StringVar(value="4")
+        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["4"], width=5, state="readonly")
         self.size_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.size_combo.bind('<<ComboboxSelected>>', self.on_size_change)
         
         # Agent type selector
         ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
-        self.agent_var = tk.StringVar(value="Hybrid")
+        self.agent_var = tk.StringVar(value="Random")
         self.agent_combo = ttk.Combobox(control_frame, textvariable=self.agent_var, 
-                                       values=["Dynamic", "Hybrid", "Random"], width=10, state="readonly")
+                                       values=["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic"], width=18, state="readonly")
         self.agent_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.agent_combo.bind('<<ComboboxSelected>>', self.on_agent_change)
         
@@ -142,17 +146,27 @@ class WumpusWorldUI:
         if isinstance(self.wumpus_positions, tuple):
             self.wumpus_positions = [self.wumpus_positions]
         
-        # Create base agent
-        self.agent = Agent(environment_map=self.game_map, N=self.grid_size)
+        # Create environment interface - no direct map access for agents
+        self.environment = WumpusEnvironment(self.game_map, self.wumpus_positions, self.pit_positions)
+        
+        # Create base agent with environment interface
+        self.agent = Agent(environment=self.environment, N=self.grid_size)
         
         # Create appropriate agent wrapper based on selection
         agent_type = self.agent_var.get()
         if agent_type == "Random":
-            self.step_agent = RandomAgentWrapper(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
+            self.step_agent = RandomAgent(self.agent)
         elif agent_type == "Hybrid":
-            self.step_agent = HybridAgentWrapper(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
-        else:  # Dynamic (default)
-            self.step_agent = DynamicAgentWrapper(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
+            self.step_agent = HybridAgent(self.agent)
+        elif agent_type == "Hybrid Dynamic":
+            self.step_agent = HybridAgentDynamic(self.agent)
+        elif agent_type == "Intelligent":
+            self.step_agent = IntelligentAgentWrapper(self.agent, max_risk_threshold=0.3)
+        elif agent_type == "Intelligent Dynamic":
+            self.step_agent = IntelligentAgentDynamic(self.agent, max_risk_threshold=0.3)
+        else:
+            # Default to random agent
+            self.step_agent = RandomAgent(self.agent)
         
         self.current_step = 0
         self.game_finished = False
@@ -167,8 +181,8 @@ class WumpusWorldUI:
         # Get current state from step agent
         if self.step_agent:
             state = self.step_agent.get_current_state()
-            current_map = state['map']
-            visited = set(state['visited'])
+            current_map = self.game_map  # Use original map for display
+            visited = set(state.get('visited', []))
         else:
             current_map = self.game_map
             visited = set()
@@ -193,11 +207,26 @@ class WumpusWorldUI:
 
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline='black', width=2)
 
-                # Draw cell contents (use original row,col for map access)
+                # Draw cell contents - ONLY show what agent knows (anti-cheat)
                 cell_contents = current_map[row][col]
-                # Pass flipped_row for drawing contents at correct y
-                if 'G' in cell_contents and self.agent.position == (row, col):
-                    self.draw_cell_contents(flipped_row, col, ['G'])
+                visible_contents = []
+                
+                # Only show contents if agent has been to this position OR it's current position
+                if (row, col) in visited or (row, col) == self.agent.position:
+                    # Show gold only if agent is currently at the position (can see glitter)
+                    if 'G' in cell_contents and self.agent.position == (row, col):
+                        visible_contents.append('G')
+                    
+                    # Show breeze/stench only if agent has been there (experienced it)
+                    if (row, col) in visited:
+                        if 'B' in cell_contents:
+                            visible_contents.append('B') 
+                        if 'S' in cell_contents:
+                            visible_contents.append('S')
+                
+                # Draw visible contents only
+                if visible_contents:
+                    self.draw_cell_contents(flipped_row, col, visible_contents)
 
         # Draw coordinates
         for i in range(self.grid_size):
@@ -217,7 +246,6 @@ class WumpusWorldUI:
             )
         
         # Draw agent
-        # Draw agent at the correct position and direction
         if self.step_agent:
             state = self.step_agent.get_current_state()
             agent_row, agent_col = state['position']
@@ -226,16 +254,27 @@ class WumpusWorldUI:
             agent_row, agent_col = self.agent.position
             agent_dir = self.agent.direction
 
-        # draw the facts only
-        facts = self.agent.kb.current_facts()
-        for fact in facts:
-            fact_pos = self.fact_position(fact)
-            if fact_pos:
-                fact_row, fact_col = fact_pos
-                # Flip the row index to match the canvas coordinates
-                flipped_row = self.grid_size - fact_row - 1
-                f = self.get_symbol(fact)
-                self.draw_cell_contents(flipped_row, fact_col, [f])
+        # Draw knowledge-based facts only for visited positions (no cheating by showing unknown info)
+        if hasattr(self.agent, 'kb') and hasattr(self.agent.kb, 'current_facts'):
+            facts = self.agent.kb.current_facts()
+            if self.step_agent:
+                state = self.step_agent.get_current_state()
+                visited = set(state.get('visited', []))
+            else:
+                visited = set()
+            
+            for fact in facts:
+                if not fact.startswith('~'):  # Only show positive facts
+                    fact_pos = self.fact_position(fact)
+                    if fact_pos and fact_pos != self.agent.position:  # Don't redraw at agent position
+                        fact_row, fact_col = fact_pos
+                        # Only show if agent has visited this position
+                        if (fact_row, fact_col) in visited:
+                            if fact_row != agent_row or fact_col != agent_col:  # Avoid overlapping agent
+                                flipped_row = self.grid_size - fact_row - 1
+                                f = self.get_symbol(fact)
+                                if f in ['S', 'B']:  # Only show sensory information agent knows
+                                    self.draw_cell_contents(flipped_row, fact_col, [f])
 
         # Flip the row index to match the canvas coordinates
         flipped_row = self.grid_size - agent_row - 1
@@ -384,7 +423,8 @@ class WumpusWorldUI:
         
         if self.step_agent:
             state = self.step_agent.get_current_state()
-            self.status_var.set(f"Step {self.step_agent.action_count} - {state['state']} - Score: {state['score']}")
+            action_count = getattr(self.step_agent, 'action_count', state.get('step', 0))
+            self.status_var.set(f"Step {action_count} - {state['state']} - Score: {state['score']}")
     
     def update_stats(self):
         """Update the stats panel"""
@@ -392,29 +432,25 @@ class WumpusWorldUI:
             state = self.step_agent.get_current_state()
             row, col = state['position']
 
-            # Get percepts at the current cell
+            # Get percepts at the current cell through environment interface
             percepts = []
-            cell_contents = self.game_map[row][col]
-            for item in cell_contents:
-                if item in ['S', 'B', 'G']:
-                    if item == 'S':
+            if hasattr(self.agent, 'environment'):
+                env_percepts = self.agent.environment.get_percept((row, col))
+                for percept in env_percepts:
+                    if percept == "Stench":
                         percepts.append("Stench")
-                    elif item == 'B':
+                    elif percept == "Breeze":
                         percepts.append("Breeze")
-                    elif item == 'G':
+                    elif percept == "Glitter":
                         percepts.append("Glitter")
             if not percepts:
                 percepts = ["None"]
             
-            # Count living wumpuses (only for dynamic agent)
-            living_wumpuses = "N/A"
-            if hasattr(self.step_agent, 'wumpus_alive'):
-                living_wumpuses = sum(self.step_agent.wumpus_alive)
-            elif 'wumpus_alive' in state:
-                living_wumpuses = sum(state['wumpus_alive'])
-            else:
-                # For non-dynamic agents, count wumpuses in map
-                living_wumpuses = sum(1 for pos in self.wumpus_positions if 'W' in self.game_map[pos[0]][pos[1]])
+            # Get risk information
+            risk_info = "N/A"
+            if hasattr(self.agent, 'risk_calculator'):
+                risk = self.agent.risk_calculator.calculate_total_risk(state['position'])
+                risk_info = f"{risk:.3f}"
 
             draw_direction = state['direction']
             if draw_direction == "N":
@@ -429,9 +465,10 @@ Score: {state['score']}
 Alive: {state['alive']}
 Has Gold: {state['gold']}
 Arrow Status: {'Not shot' if state['arrow'] == 0 else 'Hit' if state['arrow'] == 1 else 'Missed'}
-Actions: {state['action_count']}
-Current State: {state['state']}
-Living Wumpuses: {living_wumpuses}
+Current State: {state.get('state', 'exploring')}
+Risk at Position: {risk_info}
+Risk Threshold: {state.get('risk_threshold', 'N/A')}
+Returning Home: {state.get('returning_home', False)}
 Percepts: {', '.join(percepts)}"""
             
             self.stats_text.delete(1.0, tk.END)

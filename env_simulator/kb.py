@@ -146,9 +146,9 @@ class KnowledgeBase:
       print(fact)
 
   def remove_wumpus(self, i, j):
+    """Mark Wumpus as dead at position - only update after confirmation"""
     self.add_fact(f"~W({i}, {j})")
-    for ni, nj in self.get_adjacent_cells(i, j):
-        self.add_fact(f"~S({ni}, {nj})")
+    # Don't automatically remove stench - agent must perceive this change
     self.forward_chain()
 
   def is_possible_wumpus(self, i, j):
