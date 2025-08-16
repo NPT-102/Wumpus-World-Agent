@@ -280,6 +280,21 @@ class Agent2:
 		if agent.kb.is_premise_true(f"G{agent.position}"):
 			agent.gold_obtain = True
 		return agent
+	
+	def possible_wumpus_in_line(self):
+		"""Trả về danh sách ô khả năng có Wumpus theo hướng agent"""
+		mi, mj = MOVE[self.direction]
+		i, j = self.position
+		cells = []
+		i += mi
+		j += mj
+		while 0 <= i < self.kb.N and 0 <= j < self.kb.N:
+			if self.kb.is_possible_wumpus(i, j):
+				cells.append((i, j))
+			i += mi
+			j += mj
+		return cells
+
 
 	
 class Env:
