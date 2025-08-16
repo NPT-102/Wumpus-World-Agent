@@ -25,7 +25,6 @@ class Display(tk.Frame):
             "T": ImageTk.PhotoImage(Image.open("visualization/assets/treasure.png").resize((self.cell//3, self.cell//3))),
             "bomb": ImageTk.PhotoImage(Image.open("visualization/assets/bomb.png").resize((self.cell//5, self.cell//5))),
         }
-        self.next(is_init=True)
     
     def coordinate_converter(self, i, j):
         return j * self.cell + self.cell, (self.grid - i - 1) * self.cell
@@ -81,10 +80,16 @@ class Display(tk.Frame):
             x, y = self.coordinate_converter(i, j)
             self.canvas.create_rectangle(x, y, x+self.cell, y+self.cell, fill='black', stipple='gray25')
 
-    def put_agent(self, is_init=False):
+    def put_agent(self):
         i, j, direction, result = self.states.actions[self.at_step]
+        if result == 'escaped':
+            if self.carry_gold:
+                pass
+            else:
+                pass
+            return
         x, y = self.coordinate_converter(i, j)
-        if is_init is False:
+        if self.at_step != 0:
             self.visited.add((i, j))
             if direction == 'E':
                 self.canvas.create_image(x+self.cell//2, y+self.cell//2, image=self.img['East'])
@@ -103,51 +108,27 @@ class Display(tk.Frame):
         else:
             xg, yg = self.coordinate_converter(*self.states.gold)
             self.canvas.create_image(xg+self.cell//2, yg+self.cell//3*2, image=self.img['T'])
+
         if result == 'killed':
-            text_id = self.canvas.create_text(
-                self.cell * self.N // 2,
-                self.cell * self.N // 2,
-                text="BOOM!",
-                font=("Arial", self.cell * self.N // 10, "bold"),
-                fill="red"
-            )
-            self.window.after(1000, lambda: self.canvas.delete(text_id))
-            text_id = self.canvas.create_text(
-                self.cell * self.N // 2,
-                self.cell * self.N // 2,
-                text="OUCH!",
-                font=("Arial", self.cell * self.N // 10, "bold"),
-                fill="red"
-            )
-            self.window.after(500, lambda: self.canvas.delete(text_id))
+            self.canvas.create_text(self.cell//3*2, self.cell*self.grid+self.cell//3*1, text='SHOOT')
+            self.canvas.create_text(self.cell//3*2, self.cell*self.grid+self.cell//3*2, text='OUCH!')
         elif result == 'missed':
-            text_id = self.canvas.create_text(
-                self.cell * self.N // 2,
-                self.cell * self.N // 2,
-                text="BOOM!",
-                font=("Arial", self.cell * self.N // 10, "bold"),
-                fill="red"
-            )
-            self.window.after(1000, lambda: self.canvas.delete(text_id))
+            self.canvas.create_text(self.cell//2, self.cell*self.grid+self.cell//2, text='SHOOT')
         elif result == 'gold':
             self.carry_gold = True
-        elif result == 'escaped':
-            pass
+            self.canvas.create_text(self.cell//3*2, self.cell*self.grid+self.cell//3*1, text='GRAB')
+            self.canvas.create_text(self.cell//3*2, self.cell*self.grid+self.cell//3*2, text='GOLD')
         elif result == 'die':
-            text_id = self.canvas.create_text(
-                self.cell * self.N // 2,
-                self.cell * self.N // 2,
-                text="DIE",
-                font=("Arial", self.cell * self.N // 10, "bold"),
-                fill="red"
-            )
+            self.canvas.create_text(self.cell//2, self.cell*self.grid+self.cell//2, text='DIED')
 
 
-    def next(self, is_init=False):
+    def next(self):
         self.at_step += 1
         self.canvas.delete("all")
         self.set_background()
         self.put_objects()
         self.put_cues()
         self.mark_visited()
-        self.put_agent(is_init)
+        self.put_agent()
+        if self.at_step + 1 == len(self.states.actions):
+            self.at_step -= 1
