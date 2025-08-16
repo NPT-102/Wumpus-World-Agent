@@ -343,6 +343,7 @@ from search.dijkstra import dijkstra
 from env_simulator.kb import KnowledgeBase as KB
 from module.moving_Wumpus import update_wumpus_position
 from copy import deepcopy
+from env_simulator.states import States
 
 SCORE = {
     "move": -1,
@@ -377,6 +378,8 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
     kb = agent.kb if hasattr(agent, 'kb') else KB(N=N)
     action_counter = 0
     wumpus_alive = [True]*len(wumpus_positions)
+    
+    all_states = States(pit_positions, wumpus_positions, game_map)
 
     def increment_counter(count=1):
         nonlocal action_counter, wumpus_positions
@@ -389,13 +392,26 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                     print(f"Agent killed by Wumpus at {w_pos}!")
                     agent.alive = False
                     agent.score += SCORE["die"]
+                    # Record death state
+                    if all_states:
+                        all_states.add(agent, 'die', pit_positions, wumpus_positions, kb)
                     break
+
+    def record_state(result=''):
+        """Helper function to record current state"""
+        if all_states:
+            alive_wumpus_positions = [pos for pos, alive in zip(wumpus_positions, wumpus_alive) if alive]
+            all_states.add(agent, result, pit_positions, alive_wumpus_positions, kb)
+            
 
     while agent.alive:
         # --- Perceive environment ---
         agent.perceive()  # KB đã được cập nhật bên trong agent
         visited.add(agent.position)
         i, j = agent.position
+        
+        # Record state after perception
+        record_state('')
 
         # --- Nhặt vàng nếu có ---
         if not agent.gold_obtain and 'G' in game_map[i][j]:
@@ -403,9 +419,11 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
             if grabbed:
                 print(f"Grabbed gold at {agent.position}!")
                 agent.gold_obtain = True
+                record_state('gold')
                 increment_counter()
                 if agent.position == (0, 0):
                     agent.escape()
+                    record_state('escaped')
                     increment_counter()
                     break
 
@@ -426,8 +444,24 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
             if potential_wumpus and (len(potential_wumpus) == 1 or not path_states or len(path_states) < 2):
                 target_i, target_j = potential_wumpus[0]
                 print(f"Shooting Wumpus at predicted position ({target_i},{target_j})")
+                
+                # Check if we actually hit a wumpus
+                hit_wumpus = False
+                for idx, w_pos in enumerate(wumpus_positions):
+                    if wumpus_alive[idx] and w_pos == (target_i, target_j):
+                        wumpus_alive[idx] = False
+                        hit_wumpus = True
+                        break
+                
                 agent.shoot()
                 kb.mark_safe(target_i, target_j)
+                
+                # Record shooting result
+                if hit_wumpus:
+                    record_state('killed')
+                else:
+                    record_state('missed')
+                    
                 increment_counter()
                 continue
 
@@ -499,6 +533,8 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                         break
                                 
                                 agent.move_forward()
+                                # Record movement state
+                                record_state('')
                                 increment_counter()
                                 
                                 # Check if agent died during the move
@@ -553,7 +589,10 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                     else:
                                         print("No clear Wumpus target found, shooting in current direction")
                                     
-                                    agent.shoot()
+                                    if agent.shoot():
+                                        record_state('killed')
+                                    else:
+                                        record_state('missed')
                                     increment_counter()
                                     target_found = True
                                     break
@@ -639,6 +678,8 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                     break
                             
                             agent.move_forward()
+                            # Record movement state
+                            record_state('')
                             increment_counter()
                             
                             # Check if agent died during the move
@@ -722,17 +763,27 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
             turns = rotate_towards(agent, desired_dir)
             increment_counter(turns)
             agent.move_forward()
+            # Record movement state
+            record_state('')
             increment_counter()
 
         # --- Nếu đã nhặt vàng và về tới (0,0) ---
         if agent.gold_obtain and agent.position == (0,0):
             agent.escape()
+            record_state('escaped')
             increment_counter()
             break
+    
+    # Record final state if agent is still alive but stuck
+    if agent.alive and not agent.gold_obtain:
+        record_state('stuck')
+    elif not agent.alive:
+        record_state('die')
 
     return {
         "final_position": agent.position,
         "score": agent.score,
         "gold": agent.gold_obtain,
-        "alive": agent.alive
+        "alive": agent.alive,
+        "states": all_states,
     }

@@ -1,15 +1,17 @@
 import tkinter as tk
 from tkinter import ttk
 
-from selector import Selector
-from display import Display
+from visualization.selector import Selector
+from visualization.display import Display
+from agent.hybrid_agent_action_dynamic import hybrid_agent_action_dynamic
+from agent.agent import Agent
+from env_simulator.generateMap import WumpusWorldGenerator
 
 class UI:
-    def __init__(self, N=8, actual_map=None):
+    def __init__(self):
         self.window = tk.Tk()
         self.window.title("Wumpus World")
-        self.N = N
-        self.map = actual_map
+        self.N = 0
         self.random_agent = False
         self.moving_wumpus = False
         self.displays = []
@@ -78,8 +80,21 @@ class UI:
         
         # Call agent to get states
         # here
+        generator = WumpusWorldGenerator(N=4)
+        gam_map, wumpus_position, pit_positions = generator.generate_map()
+        # Lấy tất cả Wumpus, kể cả 1 hay nhiều
+        if isinstance(wumpus_position, tuple):
+            wumpus_position = [wumpus_position]  # tuple 1 Wumpus → list
+        elif isinstance(wumpus_position, list):
+            wumpus_position = list(wumpus_position)  # copy nếu cần
+        else:
+            raise ValueError("wumpus_position không hợp lệ")
+
+        agent = Agent(map=gam_map, N=4)
+        self.N = 4
+        result = hybrid_agent_action_dynamic(agent, gam_map, wumpus_position, pit_positions)
         cell_size = self.screen_height // 5 * 3 // (self.N + 1)
-        display = Display(display_frame, self.N, cell_size, states=None)  # Replace None with actual states
+        display = Display(display_frame, self.N, cell_size, states=result["states"])
         self.displays.append(display)
     
     def create_dual_displays(self):
