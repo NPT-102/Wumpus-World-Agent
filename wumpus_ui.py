@@ -6,6 +6,7 @@ from PIL import Image, ImageTk
 from env_simulator.generateMap import WumpusWorldGenerator, print_map
 from agent.agent import Agent
 from stepwise_agent import StepByStepHybridAgent
+from agent_wrapper import RandomAgentWrapper, HybridAgentWrapper, DynamicAgentWrapper
 
 class WumpusWorldUI:
     def __init__(self):
@@ -49,6 +50,14 @@ class WumpusWorldUI:
         self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["4", "5", "6", "7", "8", "9", "10"], width=5, state="readonly")
         self.size_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.size_combo.bind('<<ComboboxSelected>>', self.on_size_change)
+        
+        # Agent type selector
+        ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
+        self.agent_var = tk.StringVar(value="Dynamic")
+        self.agent_combo = ttk.Combobox(control_frame, textvariable=self.agent_var, 
+                                       values=["Dynamic", "Hybrid", "Random"], width=10, state="readonly")
+        self.agent_combo.pack(side=tk.LEFT, padx=(0, 15))
+        self.agent_combo.bind('<<ComboboxSelected>>', self.on_agent_change)
         
         # Game controls
         self.play_button = ttk.Button(control_frame, text="▶ Play", command=self.play_game)
@@ -143,13 +152,24 @@ class WumpusWorldUI:
         if isinstance(self.wumpus_positions, tuple):
             self.wumpus_positions = [self.wumpus_positions]
         
+        # Create base agent
         self.agent = Agent(map=self.game_map, N=self.grid_size)
-        self.step_agent = StepByStepHybridAgent(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
+        
+        # Create appropriate agent wrapper based on selection
+        agent_type = self.agent_var.get()
+        if agent_type == "Random":
+            self.step_agent = RandomAgentWrapper(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
+        elif agent_type == "Hybrid":
+            self.step_agent = HybridAgentWrapper(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
+        else:  # Dynamic (default)
+            self.step_agent = DynamicAgentWrapper(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
+        
         self.current_step = 0
         self.game_finished = False
         
         self.add_log("Game initialized")
         self.add_log(f"Map size: {self.grid_size}x{self.grid_size}")
+        self.add_log(f"Agent type: {agent_type}")
         self.add_log(f"Wumpus positions: {self.wumpus_positions}")
         self.add_log(f"Pit positions: {self.pit_positions}")
         
@@ -330,7 +350,18 @@ class WumpusWorldUI:
         if self.step_agent:
             state = self.step_agent.get_current_state()
             
-            stats = f"""Position: {state['position']}
+            # Count living wumpuses (only for dynamic agent)
+            living_wumpuses = "N/A"
+            if hasattr(self.step_agent, 'wumpus_alive'):
+                living_wumpuses = sum(self.step_agent.wumpus_alive)
+            elif 'wumpus_alive' in state:
+                living_wumpuses = sum(state['wumpus_alive'])
+            else:
+                # For non-dynamic agents, count wumpuses in map
+                living_wumpuses = sum(1 for pos in self.wumpus_positions if 'W' in self.game_map[pos[0]][pos[1]])
+            
+            stats = f"""Agent Type: {self.agent_var.get()}
+Position: {state['position']}
 Direction: {state['direction']}
 Score: {state['score']}
 Alive: {state['alive']}
@@ -339,7 +370,7 @@ Arrow Status: {'Not shot' if state['arrow'] == 0 else 'Hit' if state['arrow'] ==
 Actions: {state['action_count']}
 Current State: {state['state']}
 Visited Cells: {len(state['visited'])}
-Living Wumpuses: {sum(state['wumpus_alive'])}"""
+Living Wumpuses: {living_wumpuses}"""
             
             self.stats_text.delete(1.0, tk.END)
             self.stats_text.insert(1.0, stats)
@@ -383,6 +414,15 @@ Living Wumpuses: {sum(state['wumpus_alive'])}"""
             # Revert to previous size if game is running
             self.size_var.set(str(self.grid_size))
             self.add_log("Cannot change map size while game is running. Stop the game first.")
+    
+    def on_agent_change(self, event):
+        """Handle agent type change"""
+        if not self.is_playing:  # Only allow agent change when not playing
+            self.reset_game()
+        else:
+            # Revert to previous agent type if game is running
+            # We need to store the current agent type to revert
+            self.add_log("Cannot change agent type while game is running. Stop the game first.")
     
     def run(self):
         """Start the UI"""
