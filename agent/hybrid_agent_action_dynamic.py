@@ -436,14 +436,32 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
         if not path_states or len(path_states) < 2:
             # Không còn đường safe
             if agent.arrow_hit == 0 and not agent.gold_obtain:  # Still have arrow and no gold
-                # First, try to find cells with stench directly from the game map
+                # Strategy 1: First try to find cells with stench that agent has already perceived
                 stench_cells = []
                 for x in range(N):
                     for y in range(N):
-                        if (x, y) not in visited and 'S' in game_map[x][y]:
+                        if (x, y) not in visited and kb.is_premise_true(f"S({x},{y})"):
                             stench_cells.append((x, y))
                 
-                # If no direct stench cells, fall back to KB possible wumpus cells
+                # Strategy 2: If no known stench cells, look for unknown cells adjacent to visited cells
+                # These might be stench cells worth exploring
+                if not stench_cells:
+                    unknown_adjacent_cells = []
+                    for vx, vy in visited:
+                        for dx, dy in [(0,1), (0,-1), (1,0), (-1,0)]:
+                            nx, ny = vx + dx, vy + dy
+                            if (0 <= nx < N and 0 <= ny < N and 
+                                (nx, ny) not in visited and 
+                                not kb.is_premise_true(f"P({nx},{ny})") and  # Not a known pit
+                                not kb.is_premise_true(f"W({nx},{ny})")):    # Not a known Wumpus
+                                unknown_adjacent_cells.append((nx, ny))
+                    
+                    # Remove duplicates and sort by distance
+                    unknown_adjacent_cells = list(set(unknown_adjacent_cells))
+                    unknown_adjacent_cells.sort(key=lambda c: abs(c[0]-i)+abs(c[1]-j))
+                    stench_cells = unknown_adjacent_cells[:5]  # Limit to 5 closest cells
+                
+                # Strategy 3: If still no candidates, use KB possible wumpus cells
                 if not stench_cells:
                     stench_cells = [(x, y) for x in range(N) for y in range(N)
                                     if kb.is_possible_wumpus(x, y) and (x, y) not in visited]
@@ -484,18 +502,18 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                             next_pos = (agent.position[0] + MOVE[step_dir][0], 
                                        agent.position[1] + MOVE[step_dir][1])
                             if (0 <= next_pos[0] < N and 0 <= next_pos[1] < N):
-                                # Check if the next position is safe from pits and known dangers
+                                # Check if the next position is safe based on agent's knowledge
                                 if not kb.is_safe(next_pos[0], next_pos[1]):
-                                    # Check if it's a pit specifically
-                                    if 'P' in game_map[next_pos[0]][next_pos[1]]:
-                                        print(f"Cannot move to {next_pos} - pit detected! Trying different stench cell.")
+                                    # Check if agent knows there's a pit there
+                                    if kb.is_premise_true(f"P({next_pos[0]},{next_pos[1]})"):
+                                        print(f"Cannot move to {next_pos} - pit known from KB! Trying different stench cell.")
                                         break  # Try a different stench cell
-                                    elif 'W' in game_map[next_pos[0]][next_pos[1]]:
-                                        print(f"Cannot move to {next_pos} - Wumpus detected! Trying different stench cell.")
+                                    elif kb.is_premise_true(f"W({next_pos[0]},{next_pos[1]})"):
+                                        print(f"Cannot move to {next_pos} - Wumpus known from KB! Trying different stench cell.")
                                         break
-                                    # If not confirmed dangerous but not safe either, proceed with caution for stench cells
-                                    elif not ('S' in game_map[next_pos[0]][next_pos[1]]):
-                                        print(f"Avoiding potentially unsafe cell {next_pos}")
+                                    # If not confirmed safe and not a stench cell, avoid it
+                                    elif not kb.is_premise_true(f"S({next_pos[0]},{next_pos[1]})"):
+                                        print(f"Avoiding potentially unsafe cell {next_pos} - not confirmed safe")
                                         break
                                 
                                 agent.move_forward()
@@ -508,9 +526,9 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                     
                                 agent.perceive()
                                 
-                                # If we reached a stench cell or adjacent to target, try shooting
-                                if ('S' in game_map[agent.position[0]][agent.position[1]] or 
-                                    agent.position == target or
+                                # If we reached the target or found stench, or are adjacent to target, try shooting
+                                if (agent.position == target or
+                                    kb.is_premise_true(f"S({agent.position[0]},{agent.position[1]})") or 
                                     abs(agent.position[0] - target[0]) + abs(agent.position[1] - target[1]) <= 1):
                                     
                                     print(f"Near stench at {agent.position}, attempting to shoot towards Wumpus.")
@@ -583,13 +601,32 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
             elif agent.gold_obtain:
                 # Agent has gold but no safe path - should still try to shoot if has arrow
                 print("Agent has gold but no safe path found. Attempting to shoot to clear path home.")
-                # Find stench cells to shoot towards
+                
+                # Strategy 1: Find cells with stench that agent has already perceived
                 stench_cells = []
                 for x in range(N):
                     for y in range(N):
-                        if (x, y) not in visited and 'S' in game_map[x][y]:
+                        if (x, y) not in visited and kb.is_premise_true(f"S({x},{y})"):
                             stench_cells.append((x, y))
                 
+                # Strategy 2: If no known stench cells, explore unknown adjacent cells
+                if not stench_cells:
+                    unknown_adjacent_cells = []
+                    for vx, vy in visited:
+                        for dx, dy in [(0,1), (0,-1), (1,0), (-1,0)]:
+                            nx, ny = vx + dx, vy + dy
+                            if (0 <= nx < N and 0 <= ny < N and 
+                                (nx, ny) not in visited and 
+                                not kb.is_premise_true(f"P({nx},{ny})") and  # Not a known pit
+                                not kb.is_premise_true(f"W({nx},{ny})")):    # Not a known Wumpus
+                                unknown_adjacent_cells.append((nx, ny))
+                    
+                    # Remove duplicates and sort by distance
+                    unknown_adjacent_cells = list(set(unknown_adjacent_cells))
+                    unknown_adjacent_cells.sort(key=lambda c: abs(c[0]-i)+abs(c[1]-j))
+                    stench_cells = unknown_adjacent_cells[:3]  # Limit to 3 closest for return journey
+                
+                # Strategy 3: Fall back to KB possible wumpus cells
                 if not stench_cells:
                     stench_cells = [(x, y) for x in range(N) for y in range(N)
                                     if kb.is_possible_wumpus(x, y) and (x, y) not in visited]
@@ -620,26 +657,26 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                         if not agent.alive:
                             break
                         
-                        # Check if we can move forward safely - avoid pits and known dangers
-                        next_pos = (agent.position[0] + MOVE[step_dir][0], 
-                                   agent.position[1] + MOVE[step_dir][1])
-                        if (0 <= next_pos[0] < N and 0 <= next_pos[1] < N):
-                            # Check if the next position is safe from pits and known dangers
-                            if not kb.is_safe(next_pos[0], next_pos[1]):
-                                # Check if it's a pit specifically
-                                if 'P' in game_map[next_pos[0]][next_pos[1]]:
-                                    print(f"Cannot move to {next_pos} - pit detected! Finding alternative route.")
-                                    break  # Stop this direction, try to find another path
-                                elif 'W' in game_map[next_pos[0]][next_pos[1]]:
-                                    print(f"Cannot move to {next_pos} - Wumpus detected! Finding alternative route.")
-                                    break
-                                # If not confirmed dangerous but not safe either, proceed with caution for stench cells
-                                elif not ('S' in game_map[next_pos[0]][next_pos[1]]):
-                                    print(f"Avoiding potentially unsafe cell {next_pos}")
-                                    break
-                            
-                            agent.move_forward()
-                            increment_counter()
+                            # Check if we can move forward safely - avoid pits and known dangers
+                            next_pos = (agent.position[0] + MOVE[step_dir][0], 
+                                       agent.position[1] + MOVE[step_dir][1])
+                            if (0 <= next_pos[0] < N and 0 <= next_pos[1] < N):
+                                # Check if the next position is safe based on agent's knowledge
+                                if not kb.is_safe(next_pos[0], next_pos[1]):
+                                    # Check if agent knows there's a pit there
+                                    if kb.is_premise_true(f"P({next_pos[0]},{next_pos[1]})"):
+                                        print(f"Cannot move to {next_pos} - pit known from KB! Finding alternative route.")
+                                        break  # Stop this direction, try to find another path
+                                    elif kb.is_premise_true(f"W({next_pos[0]},{next_pos[1]})"):
+                                        print(f"Cannot move to {next_pos} - Wumpus known from KB! Finding alternative route.")
+                                        break
+                                    # If not confirmed safe and not a stench cell, avoid it
+                                    elif not kb.is_premise_true(f"S({next_pos[0]},{next_pos[1]})"):
+                                        print(f"Avoiding potentially unsafe cell {next_pos} - not confirmed safe")
+                                        break
+                                
+                                agent.move_forward()
+                                increment_counter()
                             
                             # Check if agent died during the move
                             if not agent.alive:
@@ -648,9 +685,9 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                 
                             agent.perceive()
                             
-                            # If we reached a stench cell or adjacent to target, try shooting
-                            if ('S' in game_map[agent.position[0]][agent.position[1]] or 
-                                agent.position == target or
+                            # If we reached the target or found stench, or are adjacent to target, try shooting
+                            if (agent.position == target or
+                                kb.is_premise_true(f"S({agent.position[0]},{agent.position[1]})") or 
                                 abs(agent.position[0] - target[0]) + abs(agent.position[1] - target[1]) <= 1):
                                 
                                 print(f"Near stench at {agent.position}, attempting to shoot to clear return path.")
