@@ -427,6 +427,13 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                 target_i, target_j = potential_wumpus[0]
                 print(f"Shooting Wumpus at predicted position ({target_i},{target_j})")
                 agent.shoot()
+                
+                # Update wumpus_alive array based on which Wumpuses were killed
+                for idx, w_pos in enumerate(wumpus_positions):
+                    if wumpus_alive[idx] and 'W' not in game_map[w_pos[0]][w_pos[1]]:
+                        wumpus_alive[idx] = False
+                        print(f"Wumpus {idx} at {w_pos} marked as dead in wumpus_alive array")
+                
                 kb.mark_safe(target_i, target_j)
                 increment_counter()
                 continue
@@ -442,6 +449,8 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                     for y in range(N):
                         if (x, y) not in visited and kb.is_premise_true(f"S({x},{y})"):
                             stench_cells.append((x, y))
+                
+                print(f"Strategy 1 - Known stench cells not visited: {stench_cells}")
                 
                 # Strategy 2: If no known stench cells, look for unknown cells adjacent to visited cells
                 # These might be stench cells worth exploring
@@ -460,11 +469,13 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                     unknown_adjacent_cells = list(set(unknown_adjacent_cells))
                     unknown_adjacent_cells.sort(key=lambda c: abs(c[0]-i)+abs(c[1]-j))
                     stench_cells = unknown_adjacent_cells[:5]  # Limit to 5 closest cells
+                    print(f"Strategy 2 - Unknown adjacent cells: {stench_cells}")
                 
                 # Strategy 3: If still no candidates, use KB possible wumpus cells
                 if not stench_cells:
                     stench_cells = [(x, y) for x in range(N) for y in range(N)
                                     if kb.is_possible_wumpus(x, y) and (x, y) not in visited]
+                    print(f"Strategy 3 - KB possible wumpus cells: {stench_cells}")
                 
                 if stench_cells:
                     # Sort by distance from agent
@@ -502,19 +513,14 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                             next_pos = (agent.position[0] + MOVE[step_dir][0], 
                                        agent.position[1] + MOVE[step_dir][1])
                             if (0 <= next_pos[0] < N and 0 <= next_pos[1] < N):
-                                # Check if the next position is safe based on agent's knowledge
-                                if not kb.is_safe(next_pos[0], next_pos[1]):
-                                    # Check if agent knows there's a pit there
-                                    if kb.is_premise_true(f"P({next_pos[0]},{next_pos[1]})"):
-                                        print(f"Cannot move to {next_pos} - pit known from KB! Trying different stench cell.")
-                                        break  # Try a different stench cell
-                                    elif kb.is_premise_true(f"W({next_pos[0]},{next_pos[1]})"):
-                                        print(f"Cannot move to {next_pos} - Wumpus known from KB! Trying different stench cell.")
-                                        break
-                                    # If not confirmed safe and not a stench cell, avoid it
-                                    elif not kb.is_premise_true(f"S({next_pos[0]},{next_pos[1]})"):
-                                        print(f"Avoiding potentially unsafe cell {next_pos} - not confirmed safe")
-                                        break
+                                # Only avoid cells with confirmed dangers (pits or Wumpuses)
+                                if kb.is_premise_true(f"P({next_pos[0]},{next_pos[1]})"):
+                                    print(f"Cannot move to {next_pos} - pit known from KB! Trying different stench cell.")
+                                    break  # Try a different stench cell
+                                elif kb.is_premise_true(f"W({next_pos[0]},{next_pos[1]})"):
+                                    print(f"Cannot move to {next_pos} - Wumpus known from KB! Trying different stench cell.")
+                                    break
+                                # For exploration, proceed to unknown cells (they might have stench to investigate)
                                 
                                 agent.move_forward()
                                 increment_counter()
@@ -533,13 +539,14 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                     
                                     print(f"Near stench at {agent.position}, attempting to shoot towards Wumpus.")
                                     
+                                    # When at a stench cell, the agent should reason that Wumpuses are nearby
                                     # Try to face towards the most likely Wumpus direction
                                     best_shot_dir = None
                                     max_wumpus_potential = 0
+                                    best_score = 0
                                     
                                     for shot_dir in ["N", "S", "E", "W"]:
-                                        # Temporarily set direction to check wumpus in line
-                                        original_dir = agent.direction
+                                        direction_score = 0
                                         
                                         # Create temporary Agent2 for checking wumpus line
                                         temp_agent = Agent2(
@@ -553,26 +560,89 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                         )
                                         wumpus_line = temp_agent.possible_wumpus_in_line()
                                         
-                                        if len(wumpus_line) > max_wumpus_potential:
+                                        # Score based on KB possible wumpus
+                                        kb_score = len(wumpus_line) * 10
+                                        
+                                        # Score based on stench pattern analysis
+                                        mi, mj = MOVE[shot_dir]
+                                        i, j = agent.position
+                                        stench_score = 0
+                                        
+                                        # When at a stench cell, give bonus for shooting towards cells that might have Wumpuses
+                                        # Check cells in the shooting direction
+                                        for distance in range(1, 4):  # Check up to 3 cells ahead
+                                            check_i = i + mi * distance
+                                            check_j = j + mj * distance
+                                            
+                                            if 0 <= check_i < N and 0 <= check_j < N:
+                                                # If we know there's a stench there, likely has Wumpus nearby
+                                                if kb.is_premise_true(f"S({check_i},{check_j})"):
+                                                    stench_score += (4 - distance) * 5  # Closer stench = higher score
+                                                # If we visited and no stench, less likely  
+                                                elif kb.is_premise_true(f"~S({check_i},{check_j})"):
+                                                    stench_score -= 2
+                                                # If we haven't visited this cell, it could be a Wumpus
+                                                elif (check_i, check_j) not in visited:
+                                                    stench_score += 2  # Unknown cells might have Wumpus
+                                        
+                                        # If we're at a stench cell and have no other info, 
+                                        # give slight preference to shooting towards center or corners where Wumpuses are more likely
+                                        if kb_score == 0 and stench_score <= 2:
+                                            center_x, center_y = N//2, N//2
+                                            target_i = i + mi
+                                            target_j = j + mj
+                                            if 0 <= target_i < N and 0 <= target_j < N:
+                                                # Prefer directions that go towards unexplored areas
+                                                distance_to_center = abs(target_i - center_x) + abs(target_j - center_y)
+                                                stench_score += max(1, 3 - distance_to_center)
+                                        
+                                        direction_score = kb_score + stench_score
+                                        
+                                        # Debug output
+                                        print(f"Direction {shot_dir}: KB_score={kb_score}, stench_score={stench_score}, total={direction_score}")
+                                        
+                                        if direction_score > best_score or (direction_score == best_score and len(wumpus_line) > max_wumpus_potential):
+                                            best_score = direction_score
                                             max_wumpus_potential = len(wumpus_line)
                                             best_shot_dir = shot_dir
-                                        
-                                        # Reset agent direction
-                                        agent.direction = original_dir
                                     
-                                    # Face the best direction if found
-                                    if best_shot_dir:
+                                    # Face the best direction if found, otherwise pick a reasonable default
+                                    if best_shot_dir and best_score > 0:
                                         turns = rotate_towards(agent, best_shot_dir)
                                         increment_counter(turns)
                                         # Check if agent is still alive after turning
                                         if not agent.alive:
                                             break
-                                        print(f"Aiming towards {best_shot_dir} direction with {max_wumpus_potential} potential Wumpus")
+                                        print(f"Aiming towards {best_shot_dir} direction (score: {best_score}, KB wumpus: {max_wumpus_potential})")
                                     else:
-                                        print("No clear Wumpus target found, shooting in current direction")
+                                        # If no clear direction, try to shoot towards the most promising quadrant
+                                        # Priority order: center, then away from edges
+                                        fallback_dirs = ["N", "S", "E", "W"]
+                                        for fallback_dir in fallback_dirs:
+                                            mi, mj = MOVE[fallback_dir]
+                                            target_i = agent.position[0] + mi
+                                            target_j = agent.position[1] + mj
+                                            if (0 <= target_i < N and 0 <= target_j < N and 
+                                                not kb.is_premise_true(f"P({target_i},{target_j})")):
+                                                best_shot_dir = fallback_dir
+                                                break
+                                        
+                                        if best_shot_dir:
+                                            turns = rotate_towards(agent, best_shot_dir)
+                                            increment_counter(turns)
+                                            print(f"Using fallback direction {best_shot_dir} for shooting")
+                                        else:
+                                            print("No clear Wumpus target found, shooting in current direction")
                                     
                                     agent.shoot()
                                     increment_counter()
+                                    
+                                    # Update wumpus_alive array based on which Wumpuses were killed
+                                    for idx, w_pos in enumerate(wumpus_positions):
+                                        if wumpus_alive[idx] and 'W' not in game_map[w_pos[0]][w_pos[1]]:
+                                            wumpus_alive[idx] = False
+                                            print(f"Wumpus {idx} at {w_pos} marked as dead in wumpus_alive array")
+                                    
                                     target_found = True
                                     break
                             else:
@@ -729,6 +799,13 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                 
                                 agent.shoot()
                                 increment_counter()
+                                
+                                # Update wumpus_alive array based on which Wumpuses were killed
+                                for idx, w_pos in enumerate(wumpus_positions):
+                                    if wumpus_alive[idx] and 'W' not in game_map[w_pos[0]][w_pos[1]]:
+                                        wumpus_alive[idx] = False
+                                        print(f"Wumpus {idx} at {w_pos} marked as dead in wumpus_alive array")
+                                
                                 break
                         else:
                             break  # Can't move further
