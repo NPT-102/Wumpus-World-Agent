@@ -7,6 +7,7 @@ from env_simulator.generateMap import WumpusWorldGenerator, print_map
 from agent.agent import Agent
 from stepwise_agent import StepByStepHybridAgent
 from agent_wrapper import RandomAgentWrapper, HybridAgentWrapper, DynamicAgentWrapper
+import re
 
 class WumpusWorldUI:
     def __init__(self):
@@ -53,7 +54,7 @@ class WumpusWorldUI:
         
         # Agent type selector
         ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
-        self.agent_var = tk.StringVar(value="Dynamic")
+        self.agent_var = tk.StringVar(value="Hybrid")
         self.agent_combo = ttk.Combobox(control_frame, textvariable=self.agent_var, 
                                        values=["Dynamic", "Hybrid", "Random"], width=10, state="readonly")
         self.agent_combo.pack(side=tk.LEFT, padx=(0, 15))
@@ -106,19 +107,8 @@ class WumpusWorldUI:
         stats_frame = ttk.LabelFrame(info_frame, text="Agent Status", padding=10)
         stats_frame.pack(fill=tk.X, pady=(0, 10))
         
-        self.stats_text = tk.Text(stats_frame, height=8, width=50)
+        self.stats_text = tk.Text(stats_frame, height=16, width=50)
         self.stats_text.pack(fill=tk.BOTH, expand=True)
-        
-        # Game log
-        log_frame = ttk.LabelFrame(info_frame, text="Game Log", padding=10)
-        log_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.log_text = tk.Text(log_frame, width=50)
-        log_scrollbar = ttk.Scrollbar(log_frame, orient=tk.VERTICAL, command=self.log_text.yview)
-        self.log_text.configure(yscrollcommand=log_scrollbar.set)
-        
-        self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        log_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
     def load_images(self):
         """Load game images"""
@@ -167,12 +157,6 @@ class WumpusWorldUI:
         self.current_step = 0
         self.game_finished = False
         
-        self.add_log("Game initialized")
-        self.add_log(f"Map size: {self.grid_size}x{self.grid_size}")
-        self.add_log(f"Agent type: {agent_type}")
-        self.add_log(f"Wumpus positions: {self.wumpus_positions}")
-        self.add_log(f"Pit positions: {self.pit_positions}")
-        
         self.draw_game_state()
         self.update_stats()
         
@@ -212,7 +196,8 @@ class WumpusWorldUI:
                 # Draw cell contents (use original row,col for map access)
                 cell_contents = current_map[row][col]
                 # Pass flipped_row for drawing contents at correct y
-                self.draw_cell_contents(flipped_row, col, cell_contents)
+                if 'G' in cell_contents and self.agent.position == (row, col):
+                    self.draw_cell_contents(flipped_row, col, ['G'])
 
         # Draw coordinates
         for i in range(self.grid_size):
@@ -241,14 +226,42 @@ class WumpusWorldUI:
             agent_row, agent_col = self.agent.position
             agent_dir = self.agent.direction
 
+        # draw the facts only
+        facts = self.agent.kb.current_facts()
+        for fact in facts:
+            fact_pos = self.fact_position(fact)
+            if fact_pos:
+                fact_row, fact_col = fact_pos
+                # Flip the row index to match the canvas coordinates
+                flipped_row = self.grid_size - fact_row - 1
+                f = self.get_symbol(fact)
+                self.draw_cell_contents(flipped_row, fact_col, [f])
+
         # Flip the row index to match the canvas coordinates
         flipped_row = self.grid_size - agent_row - 1
         self.draw_agent(flipped_row, agent_col, agent_dir)
         
+    def fact_position(self, fact):
+        if not fact.startswith('~'):
+            match = re.match(r'.*\((\d+),\s*(\d+)\)', fact)
+            if match:
+                return int(match.group(1)), int(match.group(2))
+        return None
+        
+    def get_symbol(self, fact):
+        if not fact.startswith('~'):
+            match = re.match(r'(P|W|B|S|G)\((\d+),\s*(\d+)\)', fact)
+            if match:
+                return match.group(1)
+        return None
+
     def draw_cell_contents(self, row, col, contents):
         """Draw contents of a specific cell"""
         x = col * self.cell_size + self.cell_size + self.cell_size//2
         y = row * self.cell_size + self.cell_size//2
+        
+        if not contents:
+            return
         
         # Draw each item in the cell
         y_offset = -15
@@ -348,7 +361,6 @@ class WumpusWorldUI:
         except Exception as e:
             error_msg = str(e)
             self.root.after(0, lambda: self.status_var.set(f"Error: {error_msg}"))
-            self.root.after(0, lambda: self.add_log(f"Error: {error_msg}"))
         finally:
             self.root.after(0, self.game_ended)
     
@@ -369,7 +381,6 @@ class WumpusWorldUI:
         """Update the display with current game state"""
         self.draw_game_state()
         self.update_stats()
-        self.add_log(message)
         
         if self.step_agent:
             state = self.step_agent.get_current_state()
@@ -379,6 +390,21 @@ class WumpusWorldUI:
         """Update the stats panel"""
         if self.step_agent:
             state = self.step_agent.get_current_state()
+            row, col = state['position']
+
+            # Get percepts at the current cell
+            percepts = []
+            cell_contents = self.game_map[row][col]
+            for item in cell_contents:
+                if item in ['S', 'B', 'G']:
+                    if item == 'S':
+                        percepts.append("Stench")
+                    elif item == 'B':
+                        percepts.append("Breeze")
+                    elif item == 'G':
+                        percepts.append("Glitter")
+            if not percepts:
+                percepts = ["None"]
             
             # Count living wumpuses (only for dynamic agent)
             living_wumpuses = "N/A"
@@ -405,43 +431,33 @@ Has Gold: {state['gold']}
 Arrow Status: {'Not shot' if state['arrow'] == 0 else 'Hit' if state['arrow'] == 1 else 'Missed'}
 Actions: {state['action_count']}
 Current State: {state['state']}
-Visited Cells: {len(state['visited'])}
-Living Wumpuses: {living_wumpuses}"""
+Living Wumpuses: {living_wumpuses}
+Percepts: {', '.join(percepts)}"""
             
             self.stats_text.delete(1.0, tk.END)
             self.stats_text.insert(1.0, stats)
     
     def show_final_result(self, result):
-        """Show final game result"""
-        self.add_log("=" * 40)
-        self.add_log("GAME FINISHED!")
-        self.add_log(f"Final Position: {result['final_position']}")
-        self.add_log(f"Final Score: {result['score']}")
-        self.add_log(f"Gold Obtained: {result['gold']}")
-        self.add_log(f"Agent Alive: {result['alive']}")
-        self.add_log(f"Total Actions: {result['actions']}")
-        
+        """Show final game result as a message box"""
+
+        import tkinter.messagebox as msgbox
+
         if result['gold'] and result['alive'] and result['final_position'] == (0, 0):
-            self.add_log("🎉 SUCCESS: Agent returned home with gold!")
-            self.status_var.set(f"SUCCESS! Score: {result['score']}")
+            msg = f"SUCCESS! Score: {result['score']}"
         elif result['gold'] and result['alive']:
-            self.add_log("⚠️ PARTIAL SUCCESS: Has gold but not home")
-            self.status_var.set(f"Partial Success - Score: {result['score']}")
+            msg = f"Partial Success - Score: {result['score']}"
         else:
-            self.add_log("❌ FAILED: Agent did not succeed")
-            self.status_var.set(f"Failed - Score: {result['score']}")
+            msg = f"Failed - Score: {result['score']}"
+
+        self.status_var.set(msg)
+        msgbox.showinfo("Game Result", msg)
     
     def game_ended(self):
         """Handle game end"""
         self.is_playing = False
         self.play_button.config(state='disabled' if self.game_finished else 'normal')
         self.pause_button.config(state='disabled')
-    
-    def add_log(self, message):
-        """Add message to log panel"""
-        self.log_text.insert(tk.END, f"{message}\n")
-        self.log_text.see(tk.END)
-    
+        
     def on_size_change(self, event):
         """Handle map size change"""
         if not self.is_playing:  # Only allow size change when not playing
@@ -449,16 +465,11 @@ Living Wumpuses: {living_wumpuses}"""
         else:
             # Revert to previous size if game is running
             self.size_var.set(str(self.grid_size))
-            self.add_log("Cannot change map size while game is running. Stop the game first.")
     
     def on_agent_change(self, event):
         """Handle agent type change"""
         if not self.is_playing:  # Only allow agent change when not playing
             self.reset_game()
-        else:
-            # Revert to previous agent type if game is running
-            # We need to store the current agent type to revert
-            self.add_log("Cannot change agent type while game is running. Stop the game first.")
     
     def run(self):
         """Start the UI"""

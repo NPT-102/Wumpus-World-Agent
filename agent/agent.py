@@ -54,21 +54,21 @@ class Agent:
 			self.kb.add_fact(f"B({i}, {j})")
 		else:
 			self.kb.add_fact(f"~B({i}, {j})")
-			# If no breeze -> adjacent cells don't have pits
-			for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
-				ni, nj = i + di, j + dj
-				if 0 <= ni < self.N and 0 <= nj < self.N:
-					self.kb.add_fact(f"~P({ni}, {nj})")
+			# # If no breeze -> adjacent cells don't have pits
+			# for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
+			# 	ni, nj = i + di, j + dj
+			# 	if 0 <= ni < self.N and 0 <= nj < self.N:
+			# 		self.kb.add_fact(f"~P({ni}, {nj})")
 
 		if "S" in pos:
 			self.kb.add_fact(f"S({i}, {j})")
 		else:
 			self.kb.add_fact(f"~S({i}, {j})")
-			# If no stench -> adjacent cells don't have Wumpus
-			for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
-				ni, nj = i + di, j + dj
-				if 0 <= ni < self.N and 0 <= nj < self.N:
-					self.kb.add_fact(f"~W({ni}, {nj})")
+			# # If no stench -> adjacent cells don't have Wumpus
+			# for di, dj in [(0,1), (0,-1), (1,0), (-1,0)]:
+			# 	ni, nj = i + di, j + dj
+			# 	if 0 <= ni < self.N and 0 <= nj < self.N:
+			# 		self.kb.add_fact(f"~W({ni}, {nj})")
 
 		self.kb.forward_chain()
 
