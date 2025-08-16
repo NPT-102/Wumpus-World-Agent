@@ -26,7 +26,7 @@ class WumpusWorldUI:
         self.game_finished = False
         
         # UI settings
-        self.grid_size = 4
+        self.grid_size = 4  # This will be updated from combo box
         self.cell_size = 80
         
         # Create UI components
@@ -42,6 +42,13 @@ class WumpusWorldUI:
         # Control panel
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
+        
+        # Map size selector
+        ttk.Label(control_frame, text="Map Size:").pack(side=tk.LEFT, padx=(0, 5))
+        self.size_var = tk.StringVar(value="4")
+        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["4", "5", "6", "7", "8", "9", "10"], width=5, state="readonly")
+        self.size_combo.pack(side=tk.LEFT, padx=(0, 15))
+        self.size_combo.bind('<<ComboboxSelected>>', self.on_size_change)
         
         # Game controls
         self.play_button = ttk.Button(control_frame, text="▶ Play", command=self.play_game)
@@ -120,19 +127,29 @@ class WumpusWorldUI:
     
     def setup_game(self):
         """Initialize a new game"""
-        generator = WumpusWorldGenerator(N=4)
+        # Get selected grid size
+        self.grid_size = int(self.size_var.get())
+        
+        # Update canvas size
+        self.canvas.config(
+            width=(self.grid_size + 1) * self.cell_size, 
+            height=(self.grid_size + 1) * self.cell_size
+        )
+        
+        generator = WumpusWorldGenerator(N=self.grid_size)
         self.game_map, self.wumpus_positions, self.pit_positions = generator.generate_map()
         
         # Convert single wumpus to list if needed
         if isinstance(self.wumpus_positions, tuple):
             self.wumpus_positions = [self.wumpus_positions]
         
-        self.agent = Agent(map=self.game_map, N=4)
+        self.agent = Agent(map=self.game_map, N=self.grid_size)
         self.step_agent = StepByStepHybridAgent(self.agent, self.game_map, self.wumpus_positions, self.pit_positions)
         self.current_step = 0
         self.game_finished = False
         
         self.add_log("Game initialized")
+        self.add_log(f"Map size: {self.grid_size}x{self.grid_size}")
         self.add_log(f"Wumpus positions: {self.wumpus_positions}")
         self.add_log(f"Pit positions: {self.pit_positions}")
         
@@ -357,6 +374,15 @@ Living Wumpuses: {sum(state['wumpus_alive'])}"""
         """Add message to log panel"""
         self.log_text.insert(tk.END, f"{message}\n")
         self.log_text.see(tk.END)
+    
+    def on_size_change(self, event):
+        """Handle map size change"""
+        if not self.is_playing:  # Only allow size change when not playing
+            self.reset_game()
+        else:
+            # Revert to previous size if game is running
+            self.size_var.set(str(self.grid_size))
+            self.add_log("Cannot change map size while game is running. Stop the game first.")
     
     def run(self):
         """Start the UI"""

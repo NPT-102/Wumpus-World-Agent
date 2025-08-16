@@ -75,13 +75,17 @@ class StepByStepHybridAgent:
         # Check for gold
         if 'G' in self.game_map[self.agent.position[0]][self.agent.position[1]] and not self.agent.gold_obtain:
             self.agent.grab_gold()
+            # Remove gold from the map after grabbing it
+            self.game_map[self.agent.position[0]][self.agent.position[1]].remove('G')
             self.current_state = "returning"
             return True, f"Grabbed gold at {self.agent.position}!"
         
         # Check if agent reached home with gold
         if self.agent.gold_obtain and self.agent.position == (0, 0):
+            # Add 1000 points for successfully returning home with gold
+            self.agent.score += 1000
             self.current_state = "won"
-            return False, "Agent successfully returned home with gold!"
+            return False, f"Agent successfully returned home with gold! +1000 points! Final score: {self.agent.score}"
         
         # Create planning agent
         plan_agent = Agent2(
