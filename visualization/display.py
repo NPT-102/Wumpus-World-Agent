@@ -28,7 +28,7 @@ class Display(tk.Frame):
         self.next(is_init=True)
     
     def coordinate_converter(self, i, j):
-        return j * self.cell + self.cell, i * self.cell
+        return j * self.cell + self.cell, (self.grid - i - 1) * self.cell
     
     def set_background(self):
         for i in range(self.grid):
