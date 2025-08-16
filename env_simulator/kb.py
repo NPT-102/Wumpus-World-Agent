@@ -4,6 +4,7 @@ class KnowledgeBase:
     self.rules = []
     self.N = N
     self.stench_cells = [[False]*N for _ in range(N)]
+    self.dangerous = []
     self.initialize_rules()
   
   def perceive_stench(self, i, j, stench_present: bool):
@@ -21,7 +22,6 @@ class KnowledgeBase:
     percept = self.sense()  # ví dụ ['S', 'B', ...]
     i, j = self.position
     self.kb.perceive_stench(i, j, 'S' in percept)
-    # nếu muốn, cũng có thể thêm breeze, pit, gold, v.v.
 
 
   def initialize_rules(self):
@@ -46,6 +46,14 @@ class KnowledgeBase:
         # no stench implies no wumpus in adjacent cells
         for adj in adj_cells:
           self.rules.append((f'~S({i}, {j})', 'IMPLIES', [f'~W({adj[0]}, {adj[1]})']))
+          
+        # pit implies adjacent breeze
+        for adj in adj_cells:
+          self.rules.append((f'P({i}, {j})', 'IMPLIES', [f'B({adj[0]}, {adj[1]})']))
+
+        # wumpus implies adjacent stench
+        for adj in adj_cells:
+          self.rules.append((f'W({i}, {j})', 'IMPLIES', [f'S({adj[0]}, {adj[1]})']))
 
         # no pit and no wumpus implies safe
         self.rules.append((f'~P({i}, {j}) AND ~W({i}, {j})', 'IMPLIES', [f'Safe({i}, {j})']))
@@ -88,7 +96,8 @@ class KnowledgeBase:
                 if conclusion not in self.facts:
                   self.facts.add(conclusion)
                   new_facts = True
-
+    self.update_dangerous()
+    
   # check if a premise is in facts or not
   def is_premise_true(self, premise):
     if premise.startswith('~'):
@@ -106,11 +115,35 @@ class KnowledgeBase:
         return False
       else:
         return None  
+  
+  def update_dangerous(self):
+    self.dangerous.clear()
+    for i in range(self.N):
+        for j in range(self.N):
+            # Skip if known safe
+            if self.is_safe(i, j):
+                continue
 
-  def print_knowledge(self):
-    print("Facts:")
-    for fact in sorted(self.facts):
-        print(fact)
+            # If fact says Wumpus or Pit => dangerous
+            if f"W({i},{j})" in self.facts or f"P({i},{j})" in self.facts:
+                self.dangerous.append((i, j))
+            # If possible Wumpus => dangerous
+            elif self.is_possible_wumpus(i, j):
+                self.dangerous.append((i, j))
+            # If we don’t know about pits => also dangerous
+            elif self.is_premise_true(f"P({i},{j})") is None:
+                self.dangerous.append((i, j))
+
+  def get_dangerous_cells(self):
+      self.update_dangerous()
+      return self.dangerous    
+  
+  def current_facts(self):
+    return self.facts
+
+  def print_facts(self):
+    for fact in self.facts:
+      print(fact)
 
   def remove_wumpus(self, i, j):
     self.add_fact(f"~W({i}, {j})")
@@ -119,10 +152,6 @@ class KnowledgeBase:
     self.forward_chain()
 
   def is_possible_wumpus(self, i, j):
-    """
-    Trả về True nếu KB chưa chắc chắn là không có Wumpus ở ô (i,j)
-    và có khả năng Wumpus dựa trên Stench.
-    """
     if f"W({i}, {j})" in self.facts:
         return True      # chắc chắn có Wumpus
     if f"~W({i}, {j})" in self.facts:
@@ -143,4 +172,3 @@ class KnowledgeBase:
     if 0 <= i < self.N and 0 <= j < self.N:
         return self.stench_cells[i][j]
     return False
-
