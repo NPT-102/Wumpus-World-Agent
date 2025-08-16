@@ -192,11 +192,13 @@ class WumpusWorldUI:
         # Draw grid
         for row in range(self.grid_size):
             for col in range(self.grid_size):
+                # Flip the row index to match (0,0) at bottom-left
+                flipped_row = self.grid_size - row - 1
                 x1 = col * self.cell_size + self.cell_size
-                y1 = row * self.cell_size
+                y1 = flipped_row * self.cell_size
                 x2 = x1 + self.cell_size
                 y2 = y1 + self.cell_size
-                
+
                 # Cell background color
                 if (row, col) in visited:
                     color = 'lightgreen'
@@ -204,23 +206,44 @@ class WumpusWorldUI:
                     color = 'lightblue'
                 else:
                     color = 'lightgray'
-                
+
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline='black', width=2)
-                
-                # Draw cell contents
+
+                # Draw cell contents (use original row,col for map access)
                 cell_contents = current_map[row][col]
-                self.draw_cell_contents(row, col, cell_contents)
-        
+                # Pass flipped_row for drawing contents at correct y
+                self.draw_cell_contents(flipped_row, col, cell_contents)
+
         # Draw coordinates
         for i in range(self.grid_size):
-            self.canvas.create_text(self.cell_size//2, i*self.cell_size+self.cell_size//2, 
-                                  text=f'{self.grid_size - i - 1}', font=('Arial', 12, 'bold'))
-            self.canvas.create_text((i+1)*self.cell_size+self.cell_size//2, 
-                                  self.cell_size*self.grid_size+self.cell_size//2, 
-                                  text=f'{i}', font=('Arial', 12, 'bold'))
+            # Y axis (row labels)
+            self.canvas.create_text(
+            self.cell_size // 2,
+            (self.grid_size - i - 1) * self.cell_size + self.cell_size // 2,
+            text=f'{i}',
+            font=('Arial', 12, 'bold')
+            )
+            # X axis (col labels)
+            self.canvas.create_text(
+            (i + 1) * self.cell_size + self.cell_size // 2,
+            self.cell_size * self.grid_size + self.cell_size // 2,
+            text=f'{i}',
+            font=('Arial', 12, 'bold')
+            )
         
         # Draw agent
-        self.draw_agent(self.agent.position[0], self.agent.position[1], self.agent.direction)
+        # Draw agent at the correct position and direction
+        if self.step_agent:
+            state = self.step_agent.get_current_state()
+            agent_row, agent_col = state['position']
+            agent_dir = state['direction']
+        else:
+            agent_row, agent_col = self.agent.position
+            agent_dir = self.agent.direction
+
+        # Flip the row index to match the canvas coordinates
+        flipped_row = self.grid_size - agent_row - 1
+        self.draw_agent(flipped_row, agent_col, agent_dir)
         
     def draw_cell_contents(self, row, col, contents):
         """Draw contents of a specific cell"""
@@ -248,14 +271,21 @@ class WumpusWorldUI:
         # Draw agent circle
         self.canvas.create_oval(x-20, y-20, x+20, y+20, fill='blue', outline='darkblue', width=3)
         
-        # Draw direction arrow
+        # Adjust direction for flipped y-axis
+        draw_direction = direction
         if direction == "N":
-            self.canvas.create_line(x, y, x, y-15, arrow=tk.LAST, width=3, fill='white', arrowshape=(10, 12, 3))
+            draw_direction = "S"
         elif direction == "S":
+            draw_direction = "N"
+        
+        # Draw direction arrow
+        if draw_direction == "N":
+            self.canvas.create_line(x, y, x, y-15, arrow=tk.LAST, width=3, fill='white', arrowshape=(10, 12, 3))
+        elif draw_direction == "S":
             self.canvas.create_line(x, y, x, y+15, arrow=tk.LAST, width=3, fill='white', arrowshape=(10, 12, 3))
-        elif direction == "E":
+        elif draw_direction == "E":
             self.canvas.create_line(x, y, x+15, y, arrow=tk.LAST, width=3, fill='white', arrowshape=(10, 12, 3))
-        elif direction == "W":
+        elif draw_direction == "W":
             self.canvas.create_line(x, y, x-15, y, arrow=tk.LAST, width=3, fill='white', arrowshape=(10, 12, 3))
     
     def play_game(self):
@@ -359,10 +389,16 @@ class WumpusWorldUI:
             else:
                 # For non-dynamic agents, count wumpuses in map
                 living_wumpuses = sum(1 for pos in self.wumpus_positions if 'W' in self.game_map[pos[0]][pos[1]])
-            
+
+            draw_direction = state['direction']
+            if draw_direction == "N":
+                draw_direction = "S"
+            elif draw_direction == "S":
+                draw_direction = "N"
+
             stats = f"""Agent Type: {self.agent_var.get()}
 Position: {state['position']}
-Direction: {state['direction']}
+Direction: {draw_direction}
 Score: {state['score']}
 Alive: {state['alive']}
 Has Gold: {state['gold']}
