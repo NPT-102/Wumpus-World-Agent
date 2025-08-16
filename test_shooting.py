@@ -4,23 +4,22 @@ from agent.agent import Agent
 from agent.hybrid_agent_action_dynamic import hybrid_agent_action_dynamic
 
 def main():
-    # Create a challenging map where agent needs to shoot to progress
-    # Layout:
-    # . S P S
-    # S W P G  <- Gold at (1,3), blocked by pit and wumpus
-    # P S W S
-    # P P S .
+    # Recreate the problematic scenario where agent falls into pit going to stench
+    # Layout similar to your example:
+    # . B SB W
+    # B P P SB  
+    # S B P B
+    # W S GB .
     
     game_map = [
-        [[], ['S'], ['P', 'B'], ['S']],
-        [['S'], ['W'], ['P', 'B'], ['G']],
-        [['P', 'B'], ['S'], ['W'], ['S']],
-        [['P', 'B'], ['P', 'B'], ['S'], []]
+        [[], ['B'], ['S', 'B'], ['W']],
+        [['B'], ['P'], ['P'], ['S', 'B']],
+        [['S'], ['B'], ['P'], ['B']],
+        [['W'], ['S'], ['G', 'B'], []]
     ]
     
-    # Add positions 
-    wumpus_positions = [(1,1), (2,2)]  # Two wumpuses to block paths
-    pit_positions = [(0,2), (1,2), (2,0), (3,0), (3,1)]  # Block most paths
+    wumpus_positions = [(0,3), (3,0)]  # Two wumpuses
+    pit_positions = [(1,1), (1,2), (2,2)]  # Pits that caused the problem
     
     print("Test Game Map:")
     print_map(game_map)

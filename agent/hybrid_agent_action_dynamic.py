@@ -451,8 +451,154 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                 if stench_cells:
                     # Sort by distance from agent
                     stench_cells.sort(key=lambda c: abs(c[0]-i)+abs(c[1]-j))
+                    
+                    # Try each stench cell until we find one we can reach safely
+                    target_found = False
+                    for target in stench_cells:
+                        print(f"No safe path! Attempting to reach stench cell {target} to shoot Wumpus.")
+                        
+                        # Try to move step by step towards this stench cell
+                        attempts = 0
+                        max_attempts = 10  # Prevent infinite loops
+                        
+                        while agent.position != target and agent.alive and attempts < max_attempts:
+                            ci, cj = agent.position
+                            ti, tj = target
+                            di = ti - ci
+                            dj = tj - cj
+                            
+                            # Choose direction based on largest distance component
+                            if abs(di) > abs(dj):
+                                step_dir = "S" if di > 0 else "N"
+                            else:
+                                step_dir = "E" if dj > 0 else "W"
+                            
+                            turns = rotate_towards(agent, step_dir)
+                            increment_counter(turns)
+                            
+                            # Check if agent is still alive after turning
+                            if not agent.alive:
+                                break
+                            
+                            # Check if we can move forward safely - avoid pits and known dangers
+                            next_pos = (agent.position[0] + MOVE[step_dir][0], 
+                                       agent.position[1] + MOVE[step_dir][1])
+                            if (0 <= next_pos[0] < N and 0 <= next_pos[1] < N):
+                                # Check if the next position is safe from pits and known dangers
+                                if not kb.is_safe(next_pos[0], next_pos[1]):
+                                    # Check if it's a pit specifically
+                                    if 'P' in game_map[next_pos[0]][next_pos[1]]:
+                                        print(f"Cannot move to {next_pos} - pit detected! Trying different stench cell.")
+                                        break  # Try a different stench cell
+                                    elif 'W' in game_map[next_pos[0]][next_pos[1]]:
+                                        print(f"Cannot move to {next_pos} - Wumpus detected! Trying different stench cell.")
+                                        break
+                                    # If not confirmed dangerous but not safe either, proceed with caution for stench cells
+                                    elif not ('S' in game_map[next_pos[0]][next_pos[1]]):
+                                        print(f"Avoiding potentially unsafe cell {next_pos}")
+                                        break
+                                
+                                agent.move_forward()
+                                increment_counter()
+                                
+                                # Check if agent died during the move
+                                if not agent.alive:
+                                    print(f"Agent died while moving to {agent.position}! Stopping exploration.")
+                                    break
+                                    
+                                agent.perceive()
+                                
+                                # If we reached a stench cell or adjacent to target, try shooting
+                                if ('S' in game_map[agent.position[0]][agent.position[1]] or 
+                                    agent.position == target or
+                                    abs(agent.position[0] - target[0]) + abs(agent.position[1] - target[1]) <= 1):
+                                    
+                                    print(f"Near stench at {agent.position}, attempting to shoot towards Wumpus.")
+                                    
+                                    # Try to face towards the most likely Wumpus direction
+                                    best_shot_dir = None
+                                    max_wumpus_potential = 0
+                                    
+                                    for shot_dir in ["N", "S", "E", "W"]:
+                                        # Temporarily set direction to check wumpus in line
+                                        original_dir = agent.direction
+                                        
+                                        # Create temporary Agent2 for checking wumpus line
+                                        temp_agent = Agent2(
+                                            position=agent.position,
+                                            direction=shot_dir,
+                                            alive=agent.alive,
+                                            arrow_hit=agent.arrow_hit,
+                                            gold_obtain=agent.gold_obtain,
+                                            N=N,
+                                            kb=deepcopy(agent.kb)
+                                        )
+                                        wumpus_line = temp_agent.possible_wumpus_in_line()
+                                        
+                                        if len(wumpus_line) > max_wumpus_potential:
+                                            max_wumpus_potential = len(wumpus_line)
+                                            best_shot_dir = shot_dir
+                                        
+                                        # Reset agent direction
+                                        agent.direction = original_dir
+                                    
+                                    # Face the best direction if found
+                                    if best_shot_dir:
+                                        turns = rotate_towards(agent, best_shot_dir)
+                                        increment_counter(turns)
+                                        # Check if agent is still alive after turning
+                                        if not agent.alive:
+                                            break
+                                        print(f"Aiming towards {best_shot_dir} direction with {max_wumpus_potential} potential Wumpus")
+                                    else:
+                                        print("No clear Wumpus target found, shooting in current direction")
+                                    
+                                    agent.shoot()
+                                    increment_counter()
+                                    target_found = True
+                                    break
+                            else:
+                                break  # Can't move further, try next stench cell
+                            
+                            attempts += 1
+                        
+                        # If we successfully shot or agent died, exit the stench cell loop
+                        if target_found or not agent.alive or agent.arrow_hit != 0:
+                            break
+                    
+                    # Check if agent died during the stench exploration
+                    if not agent.alive:
+                        break  # Exit the main game loop
+                    
+                    continue
+            
+            # If arrow has been used (arrow_hit != 0) or other conditions
+            if agent.arrow_hit != 0:
+                print("Arrow has been used and no safe path found. Stopping exploration.")
+                if agent.gold_obtain:
+                    print("Agent has gold but no safe path to return home.")
+                else:
+                    print("Agent has no arrow left and no safe path to continue exploration.")
+                break
+            elif agent.gold_obtain:
+                # Agent has gold but no safe path - should still try to shoot if has arrow
+                print("Agent has gold but no safe path found. Attempting to shoot to clear path home.")
+                # Find stench cells to shoot towards
+                stench_cells = []
+                for x in range(N):
+                    for y in range(N):
+                        if (x, y) not in visited and 'S' in game_map[x][y]:
+                            stench_cells.append((x, y))
+                
+                if not stench_cells:
+                    stench_cells = [(x, y) for x in range(N) for y in range(N)
+                                    if kb.is_possible_wumpus(x, y) and (x, y) not in visited]
+                
+                if stench_cells:
+                    # Sort by distance from agent
+                    stench_cells.sort(key=lambda c: abs(c[0]-i)+abs(c[1]-j))
                     target = stench_cells[0]
-                    print(f"No safe path! Moving towards stench cell {target} to shoot Wumpus.")
+                    print(f"Moving towards stench cell {target} to shoot Wumpus and clear return path.")
                     
                     # Move step by step towards the stench cell
                     while agent.position != target and agent.alive:
@@ -470,12 +616,36 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                         turns = rotate_towards(agent, step_dir)
                         increment_counter(turns)
                         
-                        # Check if we can move forward safely
+                        # Check if agent is still alive after turning
+                        if not agent.alive:
+                            break
+                        
+                        # Check if we can move forward safely - avoid pits and known dangers
                         next_pos = (agent.position[0] + MOVE[step_dir][0], 
                                    agent.position[1] + MOVE[step_dir][1])
                         if (0 <= next_pos[0] < N and 0 <= next_pos[1] < N):
+                            # Check if the next position is safe from pits and known dangers
+                            if not kb.is_safe(next_pos[0], next_pos[1]):
+                                # Check if it's a pit specifically
+                                if 'P' in game_map[next_pos[0]][next_pos[1]]:
+                                    print(f"Cannot move to {next_pos} - pit detected! Finding alternative route.")
+                                    break  # Stop this direction, try to find another path
+                                elif 'W' in game_map[next_pos[0]][next_pos[1]]:
+                                    print(f"Cannot move to {next_pos} - Wumpus detected! Finding alternative route.")
+                                    break
+                                # If not confirmed dangerous but not safe either, proceed with caution for stench cells
+                                elif not ('S' in game_map[next_pos[0]][next_pos[1]]):
+                                    print(f"Avoiding potentially unsafe cell {next_pos}")
+                                    break
+                            
                             agent.move_forward()
                             increment_counter()
+                            
+                            # Check if agent died during the move
+                            if not agent.alive:
+                                print(f"Agent died while moving to {agent.position}! Game over.")
+                                break
+                                
                             agent.perceive()
                             
                             # If we reached a stench cell or adjacent to target, try shooting
@@ -483,7 +653,7 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                 agent.position == target or
                                 abs(agent.position[0] - target[0]) + abs(agent.position[1] - target[1]) <= 1):
                                 
-                                print(f"Near stench at {agent.position}, attempting to shoot towards Wumpus.")
+                                print(f"Near stench at {agent.position}, attempting to shoot to clear return path.")
                                 
                                 # Try to face towards the most likely Wumpus direction
                                 best_shot_dir = None
@@ -492,7 +662,6 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                 for shot_dir in ["N", "S", "E", "W"]:
                                     # Temporarily set direction to check wumpus in line
                                     original_dir = agent.direction
-                                    turns_needed = rotate_towards(agent, shot_dir)
                                     
                                     # Create temporary Agent2 for checking wumpus line
                                     temp_agent = Agent2(
@@ -509,15 +678,15 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                     if len(wumpus_line) > max_wumpus_potential:
                                         max_wumpus_potential = len(wumpus_line)
                                         best_shot_dir = shot_dir
-                                    
-                                    # Reset agent direction
-                                    agent.direction = original_dir
                                 
                                 # Face the best direction if found
                                 if best_shot_dir:
                                     turns = rotate_towards(agent, best_shot_dir)
                                     increment_counter(turns)
-                                    print(f"Aiming towards {best_shot_dir} direction with {max_wumpus_potential} potential Wumpus")
+                                    # Check if agent is still alive after turning
+                                    if not agent.alive:
+                                        break
+                                    print(f"Aiming towards {best_shot_dir} direction to clear return path")
                                 else:
                                     print("No clear Wumpus target found, shooting in current direction")
                                 
@@ -526,19 +695,15 @@ def hybrid_agent_action_dynamic(agent: Agent, game_map, wumpus_positions, pit_po
                                 break
                         else:
                             break  # Can't move further
+                    
+                    # Check if agent died during the stench exploration
+                    if not agent.alive:
+                        break  # Exit the main game loop
+                    
                     continue
-            
-            # If arrow has been used (arrow_hit != 0) or other conditions
-            if agent.arrow_hit != 0:
-                print("Arrow has been used and no safe path found. Stopping exploration.")
-                if agent.gold_obtain:
-                    print("Agent has gold but no safe path to return home.")
                 else:
-                    print("Agent has no arrow left and no safe path to continue exploration.")
-                break
-            elif agent.gold_obtain:
-                print("No safe path left, but agent has gold. Returning home.")
-                break
+                    print("No safe path left and no stench to clear. Agent with gold giving up return.")
+                    break
             else:
                 print("No safe path and no Stench to investigate! Stopping agent.")
                 break
