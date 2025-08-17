@@ -136,24 +136,21 @@ class KnowledgeBase:
 
   def remove_wumpus(self, i, j):
     self.add_fact(f"~W({i}, {j})")
-    # Don't automatically remove stench - agent must perceive this change
     self.forward_chain()
 
   def is_possible_wumpus(self, i, j):
     if f"W({i}, {j})" in self.facts:
-        return True      # chắc chắn có Wumpus
+        return True 
     if f"~W({i}, {j})" in self.facts:
-        return False     # chắc chắn không có Wumpus
+        return False 
     
-    # Nếu chưa biết, dự đoán khả năng từ Stench xung quanh
     adj = self.get_adjacent_cells(i, j)
     for ni, nj in adj:
-        if f"S({ni}, {nj})" in self.facts:  # Fixed spacing to match fact format
-            return True  # có Stench gần => khả năng Wumpus
+        if f"S({ni}, {nj})" in self.facts: 
+            return True 
     return False
   
   def is_safe(self, i, j):
-    # coi ô safe nếu chắc chắn không có Wumpus hoặc Pit
     return self.is_premise_true(f"~W({i}, {j})") and self.is_premise_true(f"~P({i}, {j})")
 
   def is_stench(self, i, j):
