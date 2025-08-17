@@ -142,26 +142,6 @@ class WumpusWorldUI:
         self.positive_facts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         positive_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
-        # Negative facts tab
-        negative_frame = ttk.Frame(self.kb_notebook)
-        self.kb_notebook.add(negative_frame, text="Negative Facts")
-        
-        self.negative_facts_text = tk.Text(negative_frame, height=8, width=50)
-        negative_scrollbar = ttk.Scrollbar(negative_frame, orient="vertical", command=self.negative_facts_text.yview)
-        self.negative_facts_text.configure(yscrollcommand=negative_scrollbar.set)
-        self.negative_facts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        negative_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
-        # All facts tab
-        all_frame = ttk.Frame(self.kb_notebook)
-        self.kb_notebook.add(all_frame, text="All Facts")
-        
-        self.all_facts_text = tk.Text(all_frame, height=8, width=50)
-        all_scrollbar = ttk.Scrollbar(all_frame, orient="vertical", command=self.all_facts_text.yview)
-        self.all_facts_text.configure(yscrollcommand=all_scrollbar.set)
-        self.all_facts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        all_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        
     def load_images(self):
         """Load game images"""
         try:
@@ -244,7 +224,6 @@ class WumpusWorldUI:
         self.update_stats()
         
     def draw_game_state(self):
-        """Draw the current game state"""
         self.canvas.delete("all")
         
         # Get current state from step agent
@@ -284,48 +263,37 @@ class WumpusWorldUI:
 
                 self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, outline='black', width=2)
 
-                # Draw cell contents - ONLY show what agent knows (anti-cheat)
                 cell_contents = current_map[row][col]
                 visible_contents = []
                 
-                # Standard visibility rules - agent must visit position to see contents
                 if (row, col) in visited or (row, col) == self.agent.position:
-                    # Show gold only if agent is currently at the position (can see glitter) AND hasn't obtained it yet
                     if 'G' in cell_contents and self.agent.position == (row, col) and not self.agent.gold_obtain:
                         visible_contents.append('G')
                     
-                    # Show breeze/stench only if agent has been there (experienced it)
                     if (row, col) in visited:
                         if 'B' in cell_contents:
                             visible_contents.append('B')
                         if 'S' in cell_contents:
                             visible_contents.append('S')
                 
-                # Special handling for Moving Wumpus Agent - only for visited positions
                 if hasattr(self.step_agent, 'current_wumpus_positions') and (row, col) in visited:
-                    # Show dead Wumpuses only at visited positions (agent would know they're dead)
                     if 'W' in cell_contents:
                         wumpus_pos = (row, col)
                         if wumpus_pos in self.step_agent.current_wumpus_positions:
                             wumpus_idx = self.step_agent.current_wumpus_positions.index(wumpus_pos)
                             if not self.step_agent.wumpus_alive_status[wumpus_idx]:
-                                # Show dead Wumpus with different visual
                                 visible_contents.append('W_DEAD')
                 
-                # Draw visible contents only
                 if visible_contents:
                     self.draw_cell_contents(flipped_row, col, visible_contents)
 
-        # Draw coordinates
         for i in range(self.grid_size):
-            # Y axis (row labels)
             self.canvas.create_text(
             self.cell_size // 2,
             (self.grid_size - i - 1) * self.cell_size + self.cell_size // 2,
             text=f'{i}',
             font=('Arial', 12, 'bold')
             )
-            # X axis (col labels)
             self.canvas.create_text(
             (i + 1) * self.cell_size + self.cell_size // 2,
             self.cell_size * self.grid_size + self.cell_size // 2,
@@ -342,7 +310,6 @@ class WumpusWorldUI:
             agent_row, agent_col = self.agent.position
             agent_dir = self.agent.direction
 
-        # Draw knowledge-based facts only for visited positions (no cheating by showing unknown info)
         if hasattr(self.agent, 'kb') and hasattr(self.agent.kb, 'current_facts'):
             facts = self.agent.kb.current_facts()
             if self.step_agent:
@@ -351,7 +318,6 @@ class WumpusWorldUI:
             else:
                 visited = set()
             
-            # Separate positive and negative facts
             positive_facts = []
             negative_facts = []
             
@@ -361,7 +327,6 @@ class WumpusWorldUI:
                 else:
                     positive_facts.append(fact)
             
-            # Draw positive facts on the map with better visualization
             for fact in positive_facts:
                 fact_pos = self.fact_position(fact)
                 if fact_pos:
@@ -369,7 +334,6 @@ class WumpusWorldUI:
                     flipped_row = self.grid_size - fact_row - 1
                     symbol = self.get_symbol(fact)
                     
-                    # Draw different types of positive facts
                     if symbol == 'S':
                         if (fact_row, fact_col) in visited:
                             self.draw_positive_fact(flipped_row, fact_col, 'S', 'red')
@@ -472,43 +436,6 @@ class WumpusWorldUI:
         self.positive_facts_text.tag_config("pit", foreground="brown", font=('Arial', 9, 'bold'))
         self.positive_facts_text.tag_config("safe", foreground="green")
         self.positive_facts_text.tag_config("gold", foreground="orange", font=('Arial', 9, 'bold'))
-        
-        # Update negative facts
-        self.negative_facts_text.delete(1.0, tk.END)
-        negative_facts_sorted = sorted(negative_facts)
-        
-        # Add summary header for negative facts
-        neg_summary = f"Total negative facts: {len(negative_facts)}\n"
-        neg_summary += "-" * 40 + "\n"
-        self.negative_facts_text.insert(tk.END, neg_summary, "summary")
-        
-        for i, fact in enumerate(negative_facts_sorted, 1):
-            self.negative_facts_text.insert(tk.END, f"{i:2d}. {fact}\n", "negative")
-        
-        self.negative_facts_text.tag_config("summary", foreground="blue", font=('Arial', 9, 'bold'))
-        self.negative_facts_text.tag_config("negative", foreground="darkred")
-        
-        # Update all facts
-        self.all_facts_text.delete(1.0, tk.END)
-        all_facts_sorted = sorted(all_facts)
-        
-        # Add summary for all facts
-        all_summary = f"Total facts: {len(all_facts)} (Positive: {len(positive_facts)}, Negative: {len(negative_facts)})\n"
-        all_summary += "-" * 50 + "\n"
-        self.all_facts_text.insert(tk.END, all_summary, "summary")
-        
-        for i, fact in enumerate(all_facts_sorted, 1):
-            if fact.startswith('~'):
-                color_tag = "negative"
-            else:
-                color_tag = "positive"
-            
-            self.all_facts_text.insert(tk.END, f"{i:2d}. {fact}\n", color_tag)
-        
-        # Configure text colors
-        self.all_facts_text.tag_config("summary", foreground="blue", font=('Arial', 9, 'bold'))
-        self.all_facts_text.tag_config("positive", foreground="darkgreen")
-        self.all_facts_text.tag_config("negative", foreground="darkred")
 
     def draw_cell_contents(self, row, col, contents):
         """Draw contents of a specific cell"""
