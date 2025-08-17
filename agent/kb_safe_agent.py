@@ -42,6 +42,8 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         
         # Check if reached home with gold
         if self.returning_home and self.agent.position == (0, 0):
+            # Call escape to get the +1000 bonus points
+            self.agent.escape()
             print(f"🏠 Successfully returned home with gold! Final score: {self.agent.score}")
             return False, f"Successfully returned home with gold! Final score: {self.agent.score}"
         
