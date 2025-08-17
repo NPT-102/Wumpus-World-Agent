@@ -3,18 +3,12 @@ from tkinter import ttk
 import threading
 import time
 from PIL import Image, ImageTk
-from env_simulator.generateMap import WumpusWorldGenerator, print_map
+from env_simulator.generateMap import WumpusWorldGenerator
 from env_simulator.environment import WumpusEnvironment
 from agent.agent import Agent
-from agent.intelligent_agent_wrapper import IntelligentAgentWrapper
-from agent.intelligent_agent_dynamic import IntelligentAgentDynamic
-from agent.safe_first_intelligent_agent import SafeFirstIntelligentAgent
-from agent.simple_safe_agent import SafeFirstIntelligentAgent as SimpleSafeAgent
 from agent.kb_safe_agent import KnowledgeBaseSafeAgent
 from agent.kb_safe_moving_wumpus_agent import KnowledgeBaseSafeMovingWumpusAgent
 from agent.random_agent import RandomAgent
-from agent.hybrid_agent import HybridAgent
-from agent.hybrid_agent_action_dynamic import HybridAgentDynamic
 import re
 
 class WumpusWorldUI:
@@ -75,7 +69,7 @@ class WumpusWorldUI:
         ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
         self.agent_var = tk.StringVar(value="Random")
         self.agent_combo = ttk.Combobox(control_frame, textvariable=self.agent_var, 
-                                       values=["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic", "Safe-First Intelligent", "KB-Safe", "KB-Safe Moving Wumpus"], width=25, state="readonly")
+                                       values=["Random", "KB-Safe", "KB-Safe Moving Wumpus"], width=25, state="readonly")
         self.agent_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.agent_combo.bind('<<ComboboxSelected>>', self.on_agent_change)
         
@@ -143,7 +137,6 @@ class WumpusWorldUI:
         positive_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
     def load_images(self):
-        """Load game images"""
         try:
             self.images = {
                 "S": ImageTk.PhotoImage(Image.open("visualization/assets/stench.png").resize((40, 40))),
@@ -157,23 +150,20 @@ class WumpusWorldUI:
             self.images = {}
     
     def setup_game(self):
-        """Initialize a new game"""
-        # Get selected grid size
         self.grid_size = int(self.size_var.get())
         
-        # Get number of wumpus and pit probability from inputs
         try:
             wumpus_count = int(self.wumpus_count_var.get())
-            wumpus_count = max(1, min(wumpus_count, self.grid_size // 2))  # Validate range
+            wumpus_count = max(1, min(wumpus_count, self.grid_size // 2))
         except ValueError:
-            wumpus_count = 2  # Default fallback
+            wumpus_count = 2  
             self.wumpus_count_var.set("2")
         
         try:
             pit_probability = float(self.pit_prob_var.get())
-            pit_probability = max(0.0, min(pit_probability, 1.0))  # Validate range 0-1
+            pit_probability = max(0.0, min(pit_probability, 1.0)) 
         except ValueError:
-            pit_probability = 0.2  # Default fallback
+            pit_probability = 0.2
             self.pit_prob_var.set("0.2")
         
         # Update canvas size
@@ -185,36 +175,21 @@ class WumpusWorldUI:
         generator = WumpusWorldGenerator(N=self.grid_size, wumpus=wumpus_count, pits_probability=pit_probability)
         self.game_map, self.wumpus_positions, self.pit_positions = generator.generate_map()
         
-        # Convert single wumpus to list if needed
         if isinstance(self.wumpus_positions, tuple):
             self.wumpus_positions = [self.wumpus_positions]
         
-        # Create environment interface - no direct map access for agents
         self.environment = WumpusEnvironment(self.game_map, self.wumpus_positions, self.pit_positions)
         
-        # Create base agent with environment interface
         self.agent = Agent(environment=self.environment, N=self.grid_size)
         
-        # Create appropriate agent wrapper based on selection
         agent_type = self.agent_var.get()
         if agent_type == "Random":
             self.step_agent = RandomAgent(self.agent)
-        elif agent_type == "Hybrid":
-            self.step_agent = HybridAgent(self.agent)
-        elif agent_type == "Hybrid Dynamic":
-            self.step_agent = HybridAgentDynamic(self.agent)
-        elif agent_type == "Intelligent":
-            self.step_agent = IntelligentAgentWrapper(self.agent, max_risk_threshold=0.3)
-        elif agent_type == "Intelligent Dynamic":
-            self.step_agent = IntelligentAgentDynamic(self.agent, max_risk_threshold=0.3)
-        elif agent_type == "Safe-First Intelligent":
-            self.step_agent = SimpleSafeAgent(self.agent, max_risk_threshold=0.25)
         elif agent_type == "KB-Safe":
             self.step_agent = KnowledgeBaseSafeAgent(self.agent, max_risk_threshold=1.0)
         elif agent_type == "KB-Safe Moving Wumpus":
             self.step_agent = KnowledgeBaseSafeMovingWumpusAgent(self.agent, 'dijkstra')
         else:
-            # Default to random agent
             self.step_agent = RandomAgent(self.agent)
         
         self.current_step = 0
@@ -226,16 +201,12 @@ class WumpusWorldUI:
     def draw_game_state(self):
         self.canvas.delete("all")
         
-        # Get current state from step agent
         if self.step_agent:
             state = self.step_agent.get_current_state()
             
-            # For Moving Wumpus Agent, use real-time environment map
             if hasattr(self.step_agent, 'current_wumpus_positions'):
-                # Use updated environment map for moving wumpus agent
                 current_map = self.agent.environment.game_map
             else:
-                # Use original map for other agents
                 current_map = self.game_map
                 
             visited = set(state.get('visited', []))
@@ -336,26 +307,22 @@ class WumpusWorldUI:
                     
                     if symbol == 'S':
                         if (fact_row, fact_col) in visited:
-                            self.draw_positive_fact(flipped_row, fact_col, 'S', 'red')
-                    elif symbol == 'B': 
+                            self.draw_positive_fact(flipped_row, fact_col, 'S')
+                    elif symbol == 'B':
                         if (fact_row, fact_col) in visited:
-                            self.draw_positive_fact(flipped_row, fact_col, 'B', 'cyan')
+                            self.draw_positive_fact(flipped_row, fact_col, 'B')
                     elif symbol == 'W':  
-                        # Only show Wumpus if it's not dead (check for ~W fact)
                         dead_wumpus_fact = f"~W({fact_row},{fact_col})"
                         if dead_wumpus_fact not in facts:
-                            self.draw_positive_fact(flipped_row, fact_col, 'W', 'darkred')
-                    elif symbol == 'P':  
-                        self.draw_positive_fact(flipped_row, fact_col, 'P', 'brown')
+                            self.draw_positive_fact(flipped_row, fact_col, 'W')
+                    elif symbol == 'P':
+                        self.draw_positive_fact(flipped_row, fact_col, 'P')
                     elif symbol == 'G':  
-                        # Only show Gold fact if gold hasn't been obtained yet
                         if (fact_row, fact_col) in visited and not self.agent.gold_obtain:
-                            self.draw_positive_fact(flipped_row, fact_col, 'G', 'gold')
+                            self.draw_positive_fact(flipped_row, fact_col, 'G')
                             
-            # Update KB facts display
             self.update_kb_facts_display(positive_facts, negative_facts, facts)
 
-        # Flip the row index to match the canvas coordinates
         flipped_row = self.grid_size - agent_row - 1
         self.draw_agent(flipped_row, agent_col, agent_dir)
         
@@ -373,7 +340,7 @@ class WumpusWorldUI:
                 return match.group(1)
         return None
     
-    def draw_positive_fact(self, row, col, symbol, color):
+    def draw_positive_fact(self, row, col, symbol):
         """Draw a positive fact with images when available, fallback to shapes"""
         x = col * self.cell_size + self.cell_size + self.cell_size//2
         y = row * self.cell_size + self.cell_size//2
@@ -389,7 +356,7 @@ class WumpusWorldUI:
         elif symbol == 'G':
                 self.canvas.create_image(x, y+23, image=self.images['G'])
     
-    def update_kb_facts_display(self, positive_facts, negative_facts, all_facts):
+    def update_kb_facts_display(self, positive_facts):
         """Update the knowledge base facts display panels"""
         # Update positive facts
         self.positive_facts_text.delete(1.0, tk.END)
@@ -445,16 +412,13 @@ class WumpusWorldUI:
         if not contents:
             return
         
-        # Draw each item in the cell
         y_offset = -15
         for item in contents:
-            if item == 'A':  # Skip agent marker
+            if item == 'A': 
                 continue
-            elif item == 'W_DEAD':  # Dead Wumpus - special visual
-                # Draw dead Wumpus (grayed out Wumpus with X)
+            elif item == 'W_DEAD':  
                 if 'W' in self.images:
                     self.canvas.create_image(x, y + y_offset, image=self.images['W'])
-                    # Add X mark to show it's dead
                     self.canvas.create_line(x-20, y-20+y_offset, x+20, y+20+y_offset, 
                                           fill='red', width=4)
                     self.canvas.create_line(x-20, y+20+y_offset, x+20, y-20+y_offset, 
@@ -467,7 +431,6 @@ class WumpusWorldUI:
                 self.canvas.create_image(x, y + y_offset, image=self.images[item])
                 y_offset += 20
             else:
-                # Draw text for items without images
                 self.canvas.create_text(x, y + y_offset, text=item, font=('Arial', 10, 'bold'))
                 y_offset += 15
     
@@ -476,17 +439,14 @@ class WumpusWorldUI:
         x = col * self.cell_size + self.cell_size + self.cell_size//2
         y = row * self.cell_size + self.cell_size//2
         
-        # Draw agent circle
         self.canvas.create_oval(x-20, y-20, x+20, y+20, fill='blue', outline='darkblue', width=3)
         
-        # Adjust direction for flipped y-axis
         draw_direction = direction
         if direction == "N":
             draw_direction = "S"
         elif direction == "S":
             draw_direction = "N"
         
-        # Draw direction arrow
         if draw_direction == "N":
             self.canvas.create_line(x, y, x, y-15, arrow=tk.LAST, width=3, fill='white', arrowshape=(10, 12, 3))
         elif draw_direction == "S":
@@ -526,9 +486,8 @@ class WumpusWorldUI:
     def reset_game(self):
         """Reset the game to initial state"""
         self.stop_game()
-        time.sleep(0.1)  # Give thread time to stop
+        time.sleep(0.1)
         
-        # Reset game state flags
         self.game_finished = False
         self.current_step = 0
         
@@ -549,12 +508,11 @@ class WumpusWorldUI:
                 if self.is_playing:
                     self.execute_step()
                     
-                    # Control game speed
                     speed = float(self.speed_var.get())
                     delay = max(0.1, 1.0 / speed)
                     time.sleep(delay)
                 else:
-                    time.sleep(0.1)  # Wait while paused
+                    time.sleep(0.1)  
                     
         except Exception as e:
             error_msg = str(e)

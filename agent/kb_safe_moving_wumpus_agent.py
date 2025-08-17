@@ -1,7 +1,6 @@
 # agent/kb_safe_moving_wumpus_agent.py
 from agent.kb_safe_agent import KnowledgeBaseSafeAgent
 from module.moving_Wumpus import update_wumpus_position
-from search.kb_pathfinding import kb_safe_dijkstra
 
 class KnowledgeBaseSafeMovingWumpusAgent(KnowledgeBaseSafeAgent):
     """

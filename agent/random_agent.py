@@ -2,7 +2,7 @@
 Random Agent for Wumpus World - makes random decisions
 """
 import random
-from agent.agent import MOVE, DIRECTION
+from agent.agent import MOVE
 
 class RandomAgent:
     def __init__(self, base_agent):

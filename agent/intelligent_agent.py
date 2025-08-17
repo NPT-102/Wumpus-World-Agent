@@ -3,9 +3,7 @@ Intelligent Risk-Based Agent for Wumpus World
 Uses probability calculations to make safe decisions and explore efficiently
 """
 
-from agent.agent import Agent, Agent2, MOVE, DIRECTION
-from env_simulator.risk_calculator import RiskCalculator
-import random
+from agent.agent import Agent2
 
 class IntelligentAgent:
     def __init__(self, base_agent, max_risk_threshold=0.3):

@@ -1,8 +1,6 @@
 """
 Risk Calculator for Wumpus World - calculates probability of danger in each cell
 """
-import math
-
 class RiskCalculator:
     def __init__(self, N):
         self.N = N
