@@ -298,6 +298,11 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         elif 'NoBreeze' in current_percepts:
             self.agent.kb.add_fact(f"~B({i},{j})")
             
+        if 'Glitter' in current_percepts:
+            self.agent.kb.add_fact(f"G({i},{j})")
+        elif 'NoGlitter' in current_percepts:
+            self.agent.kb.add_fact(f"~G({i},{j})")
+            
         # Mark current position as safe (we survived here)
         self.agent.kb.add_fact(f"Safe({i},{j})")
         self.agent.kb.add_fact(f"~W({i},{j})")

@@ -78,6 +78,11 @@ class Agent:
 		else:
 			self.kb.add_fact(f"~B({i}, {j})")
 		
+		if "Glitter" in percepts:
+			self.kb.add_fact(f"G({i}, {j})")
+		else:
+			self.kb.add_fact(f"~G({i}, {j})")
+		
 		# Update risk calculator
 		self.risk_calculator.update_perception(self.position, percepts)
 		

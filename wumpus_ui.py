@@ -257,8 +257,8 @@ class WumpusWorldUI:
                 
                 # Only show contents if agent has been to this position OR it's current position
                 if (row, col) in visited or (row, col) == self.agent.position:
-                    # Show gold only if agent is currently at the position (can see glitter)
-                    if 'G' in cell_contents and self.agent.position == (row, col):
+                    # Show gold only if agent is currently at the position (can see glitter) AND hasn't obtained it yet
+                    if 'G' in cell_contents and self.agent.position == (row, col) and not self.agent.gold_obtain:
                         visible_contents.append('G')
                     
                     # Show breeze/stench only if agent has been there (experienced it)
@@ -337,7 +337,8 @@ class WumpusWorldUI:
                     elif symbol == 'P':  
                         self.draw_positive_fact(flipped_row, fact_col, 'P', 'brown')
                     elif symbol == 'G':  
-                        if (fact_row, fact_col) in visited:
+                        # Only show Gold fact if gold hasn't been obtained yet
+                        if (fact_row, fact_col) in visited and not self.agent.gold_obtain:
                             self.draw_positive_fact(flipped_row, fact_col, 'G', 'gold')
                             
             # Update KB facts display
