@@ -1,8 +1,9 @@
 class KnowledgeBase:
-  def __init__(self, N=8):
+  def __init__(self, N=8, wumpus=2):
     self.facts = set()
     self.rules = []
     self.N = N
+    self.wumpus = wumpus
     self.stench_cells = [[False]*N for _ in range(N)]
     self.dangerous = []
     self.initialize_rules()
@@ -70,6 +71,10 @@ class KnowledgeBase:
             possible = [c for c in conclusions if self.is_premise_true(c) is not False]
             
             if len(possible) == 1:
+              wumpus_fact = possible[0]
+              if wumpus_fact.startswith('W(') and not self._can_add_wumpus():
+                continue
+                
               if possible[0] not in self.facts:
                 self.facts.add(possible[0])
                 new_facts = True
@@ -85,7 +90,38 @@ class KnowledgeBase:
                 if conclusion not in self.facts:
                   self.facts.add(conclusion)
                   new_facts = True
-    self.update_dangerous()              
+      
+      if self._check_all_wumpus_found():
+        new_facts = True 
+    
+    self.update_dangerous()
+
+  def _can_add_wumpus(self):
+    known_wumpus_count = 0
+    for i in range(self.N):
+      for j in range(self.N):
+        if f"W({i}, {j})" in self.facts:
+          known_wumpus_count += 1
+    return known_wumpus_count < self.wumpus
+
+  def _check_all_wumpus_found(self):
+    known_wumpus = []
+    for i in range(self.N):
+      for j in range(self.N):
+        if f"W({i}, {j})" in self.facts:
+          known_wumpus.append((i, j))
+    
+    if len(known_wumpus) >= self.wumpus:
+      facts_added = False
+      for i in range(self.N):
+        for j in range(self.N):
+          if (i, j) not in known_wumpus:
+            if f"~W({i}, {j})" not in self.facts:
+              self.facts.add(f"~W({i}, {j})")
+              facts_added = True
+      return facts_added
+    
+    return False              
     
   # check if a premise is in facts or not
   def is_premise_true(self, premise):
@@ -108,24 +144,20 @@ class KnowledgeBase:
   def update_dangerous(self):
     self.dangerous.clear()
     for i in range(self.N):
-        for j in range(self.N):
-            # Skip if known safe
-            if self.is_safe(i, j):
-                continue
+      for j in range(self.N):
+        if self.is_safe(i, j):
+          continue
 
-            # If fact says Wumpus or Pit => dangerous
-            if f"W({i}, {j})" in self.facts or f"P({i}, {j})" in self.facts:
-                self.dangerous.append((i, j))
-            # If possible Wumpus => dangerous
-            elif self.is_possible_wumpus(i, j):
-                self.dangerous.append((i, j))
-            # If we don’t know about pits => also dangerous
-            elif self.is_premise_true(f"P({i}, {j})") is None:
-                self.dangerous.append((i, j))
+        if f"W({i}, {j})" in self.facts or f"P({i}, {j})" in self.facts:
+          self.dangerous.append((i, j))
+        elif self.is_possible_wumpus(i, j): 
+          self.dangerous.append((i, j))
+        elif self.is_premise_true(f"P({i}, {j})") is None:
+          self.dangerous.append((i, j))
 
   def get_dangerous_cells(self):
-      self.update_dangerous()
-      return self.dangerous    
+    self.update_dangerous()
+    return self.dangerous    
   
   def current_facts(self):
     return self.facts

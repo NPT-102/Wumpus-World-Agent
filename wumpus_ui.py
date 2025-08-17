@@ -720,15 +720,15 @@ Risk Threshold: {state.get('risk_threshold', 'N/A')}"""
 
         import tkinter.messagebox as msgbox
 
-        if result['gold'] and result['alive'] and result['final_position'] == (0, 0):
+        if result['gold'] and result['alive']:
             msg = f"SUCCESS! Score: {result['score']}"
-        elif result['gold'] and result['alive']:
+        elif result['gold'] and not result['alive']:    
             msg = f"Partial Success - Score: {result['score']}"
         else:
             msg = f"Failed - Score: {result['score']}"
 
         msgbox.showinfo("Game Result", msg)
-    
+
     def game_ended(self):
         """Handle game end"""
         self.is_playing = False

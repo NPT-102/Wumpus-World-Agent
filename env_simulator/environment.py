@@ -47,6 +47,10 @@ class WumpusEnvironment:
             
         return percepts
     
+    def get_wumpus_count(self):
+        """Get the total number of wumpus in the world"""
+        return len(self.wumpus_positions)
+    
     def grab_gold(self, position):
         """Try to grab gold at position"""
         i, j = position

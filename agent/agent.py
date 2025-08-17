@@ -33,7 +33,8 @@ class Agent:
 	direction = "E" #East
 
 	def __init__(self, environment: WumpusEnvironment, N=8):
-		self.kb = KB(N=N)
+		wumpus_count = environment.get_wumpus_count()
+		self.kb = KB(N=N, wumpus=wumpus_count)
 		self.N = N
 		self.environment = environment  # No direct map access - only through environment interface
 		self.risk_calculator = RiskCalculator(N)
@@ -257,7 +258,7 @@ class Agent:
 
 # Agent for Search algorithm
 class Agent2:
-	def __init__(self, position=(0, 0), direction="E", alive=True, arrow_hit=0, gold_obtain=False, N=8, kb=None, risk_calculator=None):
+	def __init__(self, position=(0, 0), direction="E", alive=True, arrow_hit=0, gold_obtain=False, N=8, kb=None, risk_calculator=None, wumpus_count=2):
 		self.position = position
 		self.direction = direction
 		self.alive = alive
@@ -266,7 +267,7 @@ class Agent2:
 		self.N = N
 		
 		if kb is None:	
-			self.kb = KB(N)
+			self.kb = KB(N, wumpus=wumpus_count)
 			i, j = self.position
 			self.kb.add_fact(
 				f"~B({i}, {j})", 
