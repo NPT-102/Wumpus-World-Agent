@@ -6,23 +6,6 @@ class KnowledgeBase:
     self.stench_cells = [[False]*N for _ in range(N)]
     self.dangerous = []
     self.initialize_rules()
-  
-  def perceive_stench(self, i, j, stench_present: bool):
-      """
-      Cập nhật thông tin Stench ở ô (i,j) dựa trên perception của agent.
-      """
-      self.stench_cells[i][j] = stench_present
-      if stench_present:
-          self.add_fact(f"S({i},{j})")
-      else:
-          self.add_fact(f"~S({i},{j})")
-      self.forward_chain()
-
-  def perceive(self):
-    percept = self.sense()  # ví dụ ['S', 'B', ...]
-    i, j = self.position
-    self.kb.perceive_stench(i, j, 'S' in percept)
-
 
   def initialize_rules(self):
     for i in range(0, self.N):
@@ -61,15 +44,12 @@ class KnowledgeBase:
   def add_fact(self, *symbols):
     for symbol in symbols:
       if symbol not in self.facts:
-        # Normalize the format to avoid duplicates like Safe(0,0) vs Safe(0, 0)
         normalized_symbol = self._normalize_fact_format(symbol)
         if normalized_symbol not in self.facts:
           self.facts.add(normalized_symbol)
 
   def _normalize_fact_format(self, fact):
-    """Normalize fact format to avoid duplicates with different spacing"""
     import re
-    # Convert Safe(0,1) to Safe(0, 1) format
     pattern = r'(\w+)\((\d+),\s*(\d+)\)'
     match = re.match(pattern, fact)
     if match:
@@ -134,13 +114,13 @@ class KnowledgeBase:
                 continue
 
             # If fact says Wumpus or Pit => dangerous
-            if f"W({i},{j})" in self.facts or f"P({i},{j})" in self.facts:
+            if f"W({i}, {j})" in self.facts or f"P({i}, {j})" in self.facts:
                 self.dangerous.append((i, j))
             # If possible Wumpus => dangerous
             elif self.is_possible_wumpus(i, j):
                 self.dangerous.append((i, j))
             # If we don’t know about pits => also dangerous
-            elif self.is_premise_true(f"P({i},{j})") is None:
+            elif self.is_premise_true(f"P({i}, {j})") is None:
                 self.dangerous.append((i, j))
 
   def get_dangerous_cells(self):
@@ -155,7 +135,6 @@ class KnowledgeBase:
       print(fact)
 
   def remove_wumpus(self, i, j):
-    """Mark Wumpus as dead at position - only update after confirmation"""
     self.add_fact(f"~W({i}, {j})")
     # Don't automatically remove stench - agent must perceive this change
     self.forward_chain()
@@ -175,8 +154,8 @@ class KnowledgeBase:
   
   def is_safe(self, i, j):
     # coi ô safe nếu chắc chắn không có Wumpus hoặc Pit
-    return self.is_premise_true(f"~W({i},{j})") and self.is_premise_true(f"~P({i},{j})")
-  
+    return self.is_premise_true(f"~W({i}, {j})") and self.is_premise_true(f"~P({i}, {j})")
+
   def is_stench(self, i, j):
     if 0 <= i < self.N and 0 <= j < self.N:
         return self.stench_cells[i][j]
