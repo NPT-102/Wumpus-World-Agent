@@ -54,20 +54,38 @@ def update_wumpus_position(agent, environment, wumpus_positions, pit_positions, 
     if wumpus_alive is None:
         wumpus_alive = [True] * len(wumpus_positions)
 
-    new_positions = []
+    new_positions = list(wumpus_positions)  # Start with current positions
 
     # Move each living Wumpus
     for idx, w_pos in enumerate(wumpus_positions):
         if not wumpus_alive[idx]:
-            new_positions.append(w_pos)
             continue
 
-        # Get other living Wumpus positions
-        other_wumpus = [p for jdx, p in enumerate(wumpus_positions) 
+        # Get other living Wumpus positions (INCLUDING already moved ones!)
+        other_wumpus = [new_positions[jdx] for jdx in range(len(new_positions)) 
                        if jdx != idx and wumpus_alive[jdx]]
         
         # Move Wumpus with limited knowledge
         new_pos = move_wumpus(environment.game_map, w_pos, pit_positions, other_wumpus)
+        
+        # Double-check for collision with already moved Wumpuses
+        while new_pos in other_wumpus and new_pos != w_pos:
+            print(f"🚨 Collision detected at {new_pos}, trying alternative move...")
+            # Try all other valid positions
+            directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+            alternative_found = False
+            for direction in directions:
+                alt_pos = (w_pos[0] + direction[0], w_pos[1] + direction[1])
+                if (is_valid_move(environment.game_map, alt_pos, pit_positions, w_pos, other_wumpus) 
+                    and alt_pos not in other_wumpus and alt_pos != (0, 0)):
+                    new_pos = alt_pos
+                    alternative_found = True
+                    break
+            
+            if not alternative_found:
+                print(f"⚠️ No collision-free move found for Wumpus {idx}, staying at {w_pos}")
+                new_pos = w_pos
+                break
         
         if new_pos != w_pos:
             print(f"Wumpus moved from {w_pos} to {new_pos}")
@@ -84,7 +102,8 @@ def update_wumpus_position(agent, environment, wumpus_positions, pit_positions, 
             # Update stench patterns through environment
             update_stench_patterns(environment, w_pos, new_pos)
         
-        new_positions.append(new_pos)
+        # Update the position in our tracking list
+        new_positions[idx] = new_pos
 
     print("Wumpus positions updated:", new_positions)
     return new_positions
