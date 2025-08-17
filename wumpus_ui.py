@@ -49,10 +49,9 @@ class WumpusWorldUI:
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Map size selector (fixed at 4x4 as requested)
         ttk.Label(control_frame, text="Map Size:").pack(side=tk.LEFT, padx=(0, 5))
-        self.size_var = tk.StringVar(value="4")
-        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["4"], width=5, state="readonly")
+        self.size_var = tk.StringVar(value="8")
+        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["8", "9", "10"], width=5, state="readonly")
         self.size_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.size_combo.bind('<<ComboboxSelected>>', self.on_size_change)
         
@@ -111,8 +110,46 @@ class WumpusWorldUI:
         stats_frame = ttk.LabelFrame(info_frame, text="Agent Status", padding=10)
         stats_frame.pack(fill=tk.X, pady=(0, 10))
         
-        self.stats_text = tk.Text(stats_frame, height=16, width=50)
+        self.stats_text = tk.Text(stats_frame, height=12, width=50)
         self.stats_text.pack(fill=tk.BOTH, expand=True)
+        
+        # Knowledge Base Facts panel
+        kb_frame = ttk.LabelFrame(info_frame, text="Knowledge Base Facts", padding=10)
+        kb_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
+        
+        # Create tabs for different fact types
+        self.kb_notebook = ttk.Notebook(kb_frame)
+        self.kb_notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Positive facts tab
+        positive_frame = ttk.Frame(self.kb_notebook)
+        self.kb_notebook.add(positive_frame, text="Positive Facts")
+        
+        self.positive_facts_text = tk.Text(positive_frame, height=8, width=50)
+        positive_scrollbar = ttk.Scrollbar(positive_frame, orient="vertical", command=self.positive_facts_text.yview)
+        self.positive_facts_text.configure(yscrollcommand=positive_scrollbar.set)
+        self.positive_facts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        positive_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # Negative facts tab
+        negative_frame = ttk.Frame(self.kb_notebook)
+        self.kb_notebook.add(negative_frame, text="Negative Facts")
+        
+        self.negative_facts_text = tk.Text(negative_frame, height=8, width=50)
+        negative_scrollbar = ttk.Scrollbar(negative_frame, orient="vertical", command=self.negative_facts_text.yview)
+        self.negative_facts_text.configure(yscrollcommand=negative_scrollbar.set)
+        self.negative_facts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        negative_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # All facts tab
+        all_frame = ttk.Frame(self.kb_notebook)
+        self.kb_notebook.add(all_frame, text="All Facts")
+        
+        self.all_facts_text = tk.Text(all_frame, height=8, width=50)
+        all_scrollbar = ttk.Scrollbar(all_frame, orient="vertical", command=self.all_facts_text.yview)
+        self.all_facts_text.configure(yscrollcommand=all_scrollbar.set)
+        self.all_facts_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        all_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
     def load_images(self):
         """Load game images"""
@@ -220,7 +257,7 @@ class WumpusWorldUI:
                     # Show breeze/stench only if agent has been there (experienced it)
                     if (row, col) in visited:
                         if 'B' in cell_contents:
-                            visible_contents.append('B') 
+                            visible_contents.append('B')
                         if 'S' in cell_contents:
                             visible_contents.append('S')
                 
@@ -263,18 +300,41 @@ class WumpusWorldUI:
             else:
                 visited = set()
             
+            # Separate positive and negative facts
+            positive_facts = []
+            negative_facts = []
+            
             for fact in facts:
-                if not fact.startswith('~'):  # Only show positive facts
-                    fact_pos = self.fact_position(fact)
-                    if fact_pos and fact_pos != self.agent.position:  # Don't redraw at agent position
-                        fact_row, fact_col = fact_pos
-                        # Only show if agent has visited this position
+                if fact.startswith('~'):
+                    negative_facts.append(fact)
+                else:
+                    positive_facts.append(fact)
+            
+            # Draw positive facts on the map with better visualization
+            for fact in positive_facts:
+                fact_pos = self.fact_position(fact)
+                if fact_pos:
+                    fact_row, fact_col = fact_pos
+                    flipped_row = self.grid_size - fact_row - 1
+                    symbol = self.get_symbol(fact)
+                    
+                    # Draw different types of positive facts
+                    if symbol == 'S':
                         if (fact_row, fact_col) in visited:
-                            if fact_row != agent_row or fact_col != agent_col:  # Avoid overlapping agent
-                                flipped_row = self.grid_size - fact_row - 1
-                                f = self.get_symbol(fact)
-                                if f in ['S', 'B']:  # Only show sensory information agent knows
-                                    self.draw_cell_contents(flipped_row, fact_col, [f])
+                            self.draw_positive_fact(flipped_row, fact_col, 'S', 'red')
+                    elif symbol == 'B': 
+                        if (fact_row, fact_col) in visited:
+                            self.draw_positive_fact(flipped_row, fact_col, 'B', 'cyan')
+                    elif symbol == 'W':  
+                        self.draw_positive_fact(flipped_row, fact_col, 'W', 'darkred')
+                    elif symbol == 'P':  
+                        self.draw_positive_fact(flipped_row, fact_col, 'P', 'brown')
+                    elif symbol == 'G':  
+                        if (fact_row, fact_col) in visited:
+                            self.draw_positive_fact(flipped_row, fact_col, 'G', 'gold')
+                            
+            # Update KB facts display
+            self.update_kb_facts_display(positive_facts, negative_facts, facts)
 
         # Flip the row index to match the canvas coordinates
         flipped_row = self.grid_size - agent_row - 1
@@ -289,10 +349,115 @@ class WumpusWorldUI:
         
     def get_symbol(self, fact):
         if not fact.startswith('~'):
-            match = re.match(r'(P|W|B|S|G)\((\d+),\s*(\d+)\)', fact)
+            match = re.match(r'(P|W|B|S|G|Safe)\((\d+),\s*(\d+)\)', fact)
             if match:
                 return match.group(1)
         return None
+    
+    def draw_positive_fact(self, row, col, symbol, color):
+        """Draw a positive fact with images when available, fallback to shapes"""
+        x = col * self.cell_size + self.cell_size + self.cell_size//2
+        y = row * self.cell_size + self.cell_size//2
+        
+        if symbol == 'SAFE':
+            # Draw safe indicator as a small green circle with checkmark
+            self.canvas.create_oval(x+15, y+20, x+31, y+36, fill=color, outline='darkgreen', width=2)
+            self.canvas.create_text(x+23, y+28, text="✓", font=('Arial', 8, 'bold'), fill='white')
+        elif symbol == 'W':
+                self.canvas.create_image(x, y, image=self.images['W'])
+        elif symbol == 'P':
+                self.canvas.create_image(x, y, image=self.images['P'])
+        elif symbol == 'S':
+                self.canvas.create_image(x-17, y+2, image=self.images['S'])
+        elif symbol == 'B':
+                self.canvas.create_image(x+17, y+2, image=self.images['B'])
+        elif symbol == 'G':
+                self.canvas.create_image(x, y+23, image=self.images['G'])
+    
+    def update_kb_facts_display(self, positive_facts, negative_facts, all_facts):
+        """Update the knowledge base facts display panels"""
+        # Update positive facts
+        self.positive_facts_text.delete(1.0, tk.END)
+        positive_facts_sorted = sorted(positive_facts)
+        
+        # Add summary header
+        stench_count = len([f for f in positive_facts if f.startswith('S(')])
+        breeze_count = len([f for f in positive_facts if f.startswith('B(')])
+        wumpus_count = len([f for f in positive_facts if f.startswith('W(')])
+        pit_count = len([f for f in positive_facts if f.startswith('P(')])
+        safe_count = len([f for f in positive_facts if f.startswith('Safe(')])
+        gold_count = len([f for f in positive_facts if f.startswith('G(')])
+        
+        summary = f"Total positive facts: {len(positive_facts)}\n"
+        summary += f"Stenches: {stench_count}, Breezes: {breeze_count}\n"
+        summary += f"Known Wumpus: {wumpus_count}, Known Pits: {pit_count}\n"
+        summary += f"Safe cells: {safe_count}, Gold: {gold_count}\n"
+        summary += "-" * 40 + "\n"
+        
+        self.positive_facts_text.insert(tk.END, summary, "summary")
+        
+        for i, fact in enumerate(positive_facts_sorted, 1):
+            fact_type = ""
+            if fact.startswith('S('):
+                fact_type = "stench"
+            elif fact.startswith('B('):
+                fact_type = "breeze"
+            elif fact.startswith('W('):
+                fact_type = "wumpus"
+            elif fact.startswith('P('):
+                fact_type = "pit"
+            elif fact.startswith('Safe('):
+                fact_type = "safe"
+            elif fact.startswith('G('):
+                fact_type = "gold"
+                
+            self.positive_facts_text.insert(tk.END, f"{i:2d}. {fact}\n", fact_type)
+        
+        # Configure text colors for positive facts
+        self.positive_facts_text.tag_config("summary", foreground="blue", font=('Arial', 9, 'bold'))
+        self.positive_facts_text.tag_config("stench", foreground="red")
+        self.positive_facts_text.tag_config("breeze", foreground="cyan")
+        self.positive_facts_text.tag_config("wumpus", foreground="darkred", font=('Arial', 9, 'bold'))
+        self.positive_facts_text.tag_config("pit", foreground="brown", font=('Arial', 9, 'bold'))
+        self.positive_facts_text.tag_config("safe", foreground="green")
+        self.positive_facts_text.tag_config("gold", foreground="orange", font=('Arial', 9, 'bold'))
+        
+        # Update negative facts
+        self.negative_facts_text.delete(1.0, tk.END)
+        negative_facts_sorted = sorted(negative_facts)
+        
+        # Add summary header for negative facts
+        neg_summary = f"Total negative facts: {len(negative_facts)}\n"
+        neg_summary += "-" * 40 + "\n"
+        self.negative_facts_text.insert(tk.END, neg_summary, "summary")
+        
+        for i, fact in enumerate(negative_facts_sorted, 1):
+            self.negative_facts_text.insert(tk.END, f"{i:2d}. {fact}\n", "negative")
+        
+        self.negative_facts_text.tag_config("summary", foreground="blue", font=('Arial', 9, 'bold'))
+        self.negative_facts_text.tag_config("negative", foreground="darkred")
+        
+        # Update all facts
+        self.all_facts_text.delete(1.0, tk.END)
+        all_facts_sorted = sorted(all_facts)
+        
+        # Add summary for all facts
+        all_summary = f"Total facts: {len(all_facts)} (Positive: {len(positive_facts)}, Negative: {len(negative_facts)})\n"
+        all_summary += "-" * 50 + "\n"
+        self.all_facts_text.insert(tk.END, all_summary, "summary")
+        
+        for i, fact in enumerate(all_facts_sorted, 1):
+            if fact.startswith('~'):
+                color_tag = "negative"
+            else:
+                color_tag = "positive"
+            
+            self.all_facts_text.insert(tk.END, f"{i:2d}. {fact}\n", color_tag)
+        
+        # Configure text colors
+        self.all_facts_text.tag_config("summary", foreground="blue", font=('Arial', 9, 'bold'))
+        self.all_facts_text.tag_config("positive", foreground="darkgreen")
+        self.all_facts_text.tag_config("negative", foreground="darkred")
 
     def draw_cell_contents(self, row, col, contents):
         """Draw contents of a specific cell"""
@@ -382,8 +547,8 @@ class WumpusWorldUI:
         """Execute one step of the game manually"""
         if not self.game_finished and not self.is_playing:
             self.execute_step()
-    
     def run_game_loop(self):
+        
         """Run the game logic in a separate thread"""
         try:
             while not self.is_stopped and not self.game_finished:
