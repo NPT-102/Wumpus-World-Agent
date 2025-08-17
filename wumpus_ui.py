@@ -11,6 +11,7 @@ from agent.intelligent_agent_dynamic import IntelligentAgentDynamic
 from agent.safe_first_intelligent_agent import SafeFirstIntelligentAgent
 from agent.simple_safe_agent import SafeFirstIntelligentAgent as SimpleSafeAgent
 from agent.kb_safe_agent import KnowledgeBaseSafeAgent
+from agent.kb_safe_moving_wumpus_agent import KnowledgeBaseSafeMovingWumpusAgent
 from agent.random_agent import RandomAgent
 from agent.hybrid_agent import HybridAgent
 from agent.hybrid_agent_action_dynamic import HybridAgentDynamic
@@ -74,7 +75,7 @@ class WumpusWorldUI:
         ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
         self.agent_var = tk.StringVar(value="Random")
         self.agent_combo = ttk.Combobox(control_frame, textvariable=self.agent_var, 
-                                       values=["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic", "Safe-First Intelligent", "KB-Safe"], width=20, state="readonly")
+                                       values=["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic", "Safe-First Intelligent", "KB-Safe", "KB-Safe Moving Wumpus"], width=25, state="readonly")
         self.agent_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.agent_combo.bind('<<ComboboxSelected>>', self.on_agent_change)
         
@@ -230,6 +231,8 @@ class WumpusWorldUI:
             self.step_agent = SimpleSafeAgent(self.agent, max_risk_threshold=0.25)
         elif agent_type == "KB-Safe":
             self.step_agent = KnowledgeBaseSafeAgent(self.agent, max_risk_threshold=1.0)
+        elif agent_type == "KB-Safe Moving Wumpus":
+            self.step_agent = KnowledgeBaseSafeMovingWumpusAgent(self.agent, 'dijkstra')
         else:
             # Default to random agent
             self.step_agent = RandomAgent(self.agent)
@@ -247,7 +250,15 @@ class WumpusWorldUI:
         # Get current state from step agent
         if self.step_agent:
             state = self.step_agent.get_current_state()
-            current_map = self.game_map  # Use original map for display
+            
+            # For Moving Wumpus Agent, use real-time environment map
+            if hasattr(self.step_agent, 'current_wumpus_positions'):
+                # Use updated environment map for moving wumpus agent
+                current_map = self.agent.environment.game_map
+            else:
+                # Use original map for other agents
+                current_map = self.game_map
+                
             visited = set(state.get('visited', []))
         else:
             current_map = self.game_map
@@ -277,7 +288,7 @@ class WumpusWorldUI:
                 cell_contents = current_map[row][col]
                 visible_contents = []
                 
-                # Only show contents if agent has been to this position OR it's current position
+                # Standard visibility rules - agent must visit position to see contents
                 if (row, col) in visited or (row, col) == self.agent.position:
                     # Show gold only if agent is currently at the position (can see glitter) AND hasn't obtained it yet
                     if 'G' in cell_contents and self.agent.position == (row, col) and not self.agent.gold_obtain:
@@ -289,6 +300,17 @@ class WumpusWorldUI:
                             visible_contents.append('B')
                         if 'S' in cell_contents:
                             visible_contents.append('S')
+                
+                # Special handling for Moving Wumpus Agent - only for visited positions
+                if hasattr(self.step_agent, 'current_wumpus_positions') and (row, col) in visited:
+                    # Show dead Wumpuses only at visited positions (agent would know they're dead)
+                    if 'W' in cell_contents:
+                        wumpus_pos = (row, col)
+                        if wumpus_pos in self.step_agent.current_wumpus_positions:
+                            wumpus_idx = self.step_agent.current_wumpus_positions.index(wumpus_pos)
+                            if not self.step_agent.wumpus_alive_status[wumpus_idx]:
+                                # Show dead Wumpus with different visual
+                                visible_contents.append('W_DEAD')
                 
                 # Draw visible contents only
                 if visible_contents:
@@ -501,6 +523,19 @@ class WumpusWorldUI:
         for item in contents:
             if item == 'A':  # Skip agent marker
                 continue
+            elif item == 'W_DEAD':  # Dead Wumpus - special visual
+                # Draw dead Wumpus (grayed out Wumpus with X)
+                if 'W' in self.images:
+                    self.canvas.create_image(x, y + y_offset, image=self.images['W'])
+                    # Add X mark to show it's dead
+                    self.canvas.create_line(x-20, y-20+y_offset, x+20, y+20+y_offset, 
+                                          fill='red', width=4)
+                    self.canvas.create_line(x-20, y+20+y_offset, x+20, y-20+y_offset, 
+                                          fill='red', width=4)
+                else:
+                    self.canvas.create_text(x, y + y_offset, text="W†", 
+                                          font=('Arial', 12, 'bold'), fill='gray')
+                y_offset += 30
             elif item in self.images:
                 self.canvas.create_image(x, y + y_offset, image=self.images[item])
                 y_offset += 20
@@ -651,7 +686,20 @@ class WumpusWorldUI:
             if hasattr(self.step_agent, 'pathfinding_algorithm'):
                 pathfinding_info = f"\nPathfinding: {self.step_agent.pathfinding_algorithm.upper()}"
 
-            stats = f"""Agent Type: {self.agent_var.get()}{pathfinding_info}
+            # Moving Wumpus specific info
+            moving_wumpus_info = ""
+            if hasattr(self.step_agent, 'current_wumpus_positions'):
+                living_count = sum(self.step_agent.wumpus_alive_status)
+                total_count = len(self.step_agent.wumpus_alive_status)
+                next_move = state.get('next_wumpus_move', 0)
+                action_count = state.get('action_count', 0)
+                
+                moving_wumpus_info = f"""
+Wumpus Status: {living_count}/{total_count} alive
+Next Wumpus Move: {next_move} actions
+Total Actions: {action_count}"""
+
+            stats = f"""Agent Type: {self.agent_var.get()}{pathfinding_info}{moving_wumpus_info}
 Position: {state['position']}
 Direction: {draw_direction}
 Score: {state['score']}
