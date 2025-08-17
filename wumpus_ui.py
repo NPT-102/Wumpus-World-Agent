@@ -646,7 +646,12 @@ class WumpusWorldUI:
             elif draw_direction == "S":
                 draw_direction = "N"
 
-            stats = f"""Agent Type: {self.agent_var.get()}
+            # KB-Safe agent always uses Dijkstra pathfinding
+            pathfinding_info = ""
+            if hasattr(self.step_agent, 'pathfinding_algorithm'):
+                pathfinding_info = f"\nPathfinding: {self.step_agent.pathfinding_algorithm.upper()}"
+
+            stats = f"""Agent Type: {self.agent_var.get()}{pathfinding_info}
 Position: {state['position']}
 Direction: {draw_direction}
 Score: {state['score']}
