@@ -58,6 +58,18 @@ class WumpusWorldUI:
         self.size_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.size_combo.bind('<<ComboboxSelected>>', self.on_size_change)
         
+        # Number of Wumpus input
+        ttk.Label(control_frame, text="Wumpus Count:").pack(side=tk.LEFT, padx=(0, 5))
+        self.wumpus_count_var = tk.StringVar(value="2")
+        self.wumpus_count_entry = ttk.Entry(control_frame, textvariable=self.wumpus_count_var, width=5)
+        self.wumpus_count_entry.pack(side=tk.LEFT, padx=(0, 15))
+        
+        # Pit probability input
+        ttk.Label(control_frame, text="Pit Probability:").pack(side=tk.LEFT, padx=(0, 5))
+        self.pit_prob_var = tk.StringVar(value="0.2")
+        self.pit_prob_entry = ttk.Entry(control_frame, textvariable=self.pit_prob_var, width=5)
+        self.pit_prob_entry.pack(side=tk.LEFT, padx=(0, 15))
+        
         # Agent type selector
         ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
         self.agent_var = tk.StringVar(value="Random")
@@ -88,11 +100,6 @@ class WumpusWorldUI:
         self.speed_var = tk.StringVar(value="1.0")
         self.speed_scale = ttk.Scale(control_frame, from_=0.1, to=3.0, variable=self.speed_var, orient=tk.HORIZONTAL, length=100)
         self.speed_scale.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Status
-        self.status_var = tk.StringVar(value="Ready to start")
-        self.status_label = ttk.Label(control_frame, textvariable=self.status_var)
-        self.status_label.pack(side=tk.RIGHT)
         
         # Main content area
         content_frame = ttk.Frame(main_frame)
@@ -173,13 +180,28 @@ class WumpusWorldUI:
         # Get selected grid size
         self.grid_size = int(self.size_var.get())
         
+        # Get number of wumpus and pit probability from inputs
+        try:
+            wumpus_count = int(self.wumpus_count_var.get())
+            wumpus_count = max(1, min(wumpus_count, self.grid_size // 2))  # Validate range
+        except ValueError:
+            wumpus_count = 2  # Default fallback
+            self.wumpus_count_var.set("2")
+        
+        try:
+            pit_probability = float(self.pit_prob_var.get())
+            pit_probability = max(0.0, min(pit_probability, 1.0))  # Validate range 0-1
+        except ValueError:
+            pit_probability = 0.2  # Default fallback
+            self.pit_prob_var.set("0.2")
+        
         # Update canvas size
         self.canvas.config(
             width=(self.grid_size + 1) * self.cell_size, 
             height=(self.grid_size + 1) * self.cell_size
         )
         
-        generator = WumpusWorldGenerator(N=self.grid_size)
+        generator = WumpusWorldGenerator(N=self.grid_size, wumpus=wumpus_count, pits_probability=pit_probability)
         self.game_map, self.wumpus_positions, self.pit_positions = generator.generate_map()
         
         # Convert single wumpus to list if needed
@@ -530,7 +552,6 @@ class WumpusWorldUI:
         self.is_playing = False
         self.play_button.config(state='normal')
         self.pause_button.config(state='disabled')
-        self.status_var.set("Paused")
     
     def stop_game(self):
         """Stop the game"""
@@ -539,16 +560,20 @@ class WumpusWorldUI:
         self.play_button.config(state='normal')
         self.pause_button.config(state='disabled')
         self.stop_button.config(state='disabled')
-        self.status_var.set("Stopped")
     
     def reset_game(self):
         """Reset the game to initial state"""
         self.stop_game()
         time.sleep(0.1)  # Give thread time to stop
+        
+        # Reset game state flags
+        self.game_finished = False
+        self.current_step = 0
+        
         self.setup_game()
-        self.status_var.set("Reset complete")
         self.play_button.config(state='normal')
         self.stop_button.config(state='normal')
+        self.reset_button.config(state='normal')
     
     def step_forward(self):
         """Execute one step of the game manually"""
@@ -571,7 +596,6 @@ class WumpusWorldUI:
                     
         except Exception as e:
             error_msg = str(e)
-            self.root.after(0, lambda: self.status_var.set(f"Error: {error_msg}"))
         finally:
             self.root.after(0, self.game_ended)
     
@@ -581,22 +605,14 @@ class WumpusWorldUI:
             can_continue, message = self.step_agent.step()
             
             # Update display on main thread
-            self.root.after(0, self.update_display, message)
+            self.root.after(0, self.draw_game_state)
+            self.root.after(0, self.update_stats)
             
             if not can_continue:
                 self.game_finished = True
+                self.is_playing = False  # Stop the game loop immediately
                 final_result = self.step_agent.get_final_result()
                 self.root.after(0, self.show_final_result, final_result)
-    
-    def update_display(self, message):
-        """Update the display with current game state"""
-        self.draw_game_state()
-        self.update_stats()
-        
-        if self.step_agent:
-            state = self.step_agent.get_current_state()
-            action_count = getattr(self.step_agent, 'action_count', state.get('step', 0))
-            self.status_var.set(f"Step {action_count} - {state['state']} - Score: {state['score']}")
     
     def update_stats(self):
         """Update the stats panel"""
@@ -635,21 +651,13 @@ Position: {state['position']}
 Direction: {draw_direction}
 Score: {state['score']}
 Alive: {state['alive']}
+Percepts: {', '.join(percepts)}
 Has Gold: {state['gold']}
 Arrow Status: {'Not shot' if state['arrow'] == 0 else 'Hit' if state['arrow'] == 1 else 'Missed'}
 Current State: {state.get('state', 'exploring')}
 Current Strategy: {state.get('current_strategy', 'N/A')}
 Risk at Position: {risk_info}
-Risk Threshold: {state.get('risk_threshold', 'N/A')}
-Returning Home: {state.get('returning_home', False)}
-Percepts: {', '.join(percepts)}
-
-KB Knowledge:
-Safe Cells Known: {state.get('kb_stats', {}).get('safe_cells', 0)}
-Known Pits: {state.get('kb_stats', {}).get('known_pits', 0)}
-Known Wumpuses: {state.get('kb_stats', {}).get('known_wumpuses', 0)}
-Stenches Detected: {state.get('kb_stats', {}).get('stenches', 0)}
-Breezes Detected: {state.get('kb_stats', {}).get('breezes', 0)}"""
+Risk Threshold: {state.get('risk_threshold', 'N/A')}"""
             
             self.stats_text.delete(1.0, tk.END)
             self.stats_text.insert(1.0, stats)
@@ -666,14 +674,16 @@ Breezes Detected: {state.get('kb_stats', {}).get('breezes', 0)}"""
         else:
             msg = f"Failed - Score: {result['score']}"
 
-        self.status_var.set(msg)
         msgbox.showinfo("Game Result", msg)
     
     def game_ended(self):
         """Handle game end"""
         self.is_playing = False
+        self.is_stopped = True
         self.play_button.config(state='disabled' if self.game_finished else 'normal')
         self.pause_button.config(state='disabled')
+        self.stop_button.config(state='disabled')
+        self.reset_button.config(state='normal')  # Always allow reset
         
     def on_size_change(self, event):
         """Handle map size change"""
