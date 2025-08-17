@@ -1,15 +1,68 @@
 from agent.intelligent_agent import IntelligentAgent
 
-class KnowledgeBaseSafeAgent(IntelligentAgent):
+import re
+from typing import List, Tuple, Set
+from search.kb_pathfinding import kb_safe_astar, kb_safe_dijkstra, find_best_kb_safe_path
+
+class KnowledgeBaseSafeAgent:
     """Pure Knowledge Base agent - only moves to cells that KB confirms as safe"""
 
-    def __init__(self, base_agent, max_risk_threshold=1.0):  # High threshold, not used
-        super().__init__(base_agent, max_risk_threshold)
+    def __init__(self, base_agent, max_risk_threshold=1.0):
+        self.agent = base_agent
+        self.max_risk_threshold = max_risk_threshold  # Not used, for compatibility
         self.agent_type_name = 'KB-Safe Agent'
         self.visited_positions = set()
         self.exploration_complete = False
         self.navigation_attempts = 0
-        self.max_navigation_attempts = 50  # Increased for better pathfinding
+        self.max_navigation_attempts = 50
+        self.returning_home = False  # Flag for returning home state
+        
+        # Always use Dijkstra algorithm for optimal KB-safe pathfinding
+        self.pathfinding_algorithm = 'dijkstra'
+        
+    def _find_path_with_algorithm(self, start_pos, target_pos, kb_safe_set):
+        """Find path using selected pathfinding algorithm"""
+        if self.pathfinding_algorithm == 'astar':
+            return kb_safe_astar(start_pos, target_pos, kb_safe_set, self.visited_positions, self.agent.environment.N)
+        elif self.pathfinding_algorithm == 'dijkstra':
+            return kb_safe_dijkstra(start_pos, target_pos, kb_safe_set, self.visited_positions, self.agent.environment.N)
+        else:  # BFS fallback
+            return self._bfs_pathfind(start_pos, target_pos, kb_safe_set)
+    
+    def _bfs_pathfind(self, start_pos, target_pos, kb_safe_set):
+        """Basic BFS pathfinding for fallback"""
+        from collections import deque
+        
+        if start_pos == target_pos:
+            return [start_pos]
+        
+        queue = deque([(start_pos, [start_pos])])
+        visited = {start_pos}
+        
+        while queue:
+            current_pos, path = queue.popleft()
+            
+            i, j = current_pos
+            adjacent = [(i-1, j), (i+1, j), (i, j-1), (i, j+1)]
+            
+            for adj_pos in adjacent:
+                adj_i, adj_j = adj_pos
+                if (adj_i < 0 or adj_i >= self.agent.environment.N or 
+                    adj_j < 0 or adj_j >= self.agent.environment.N):
+                    continue
+                    
+                if adj_pos in visited or adj_pos not in kb_safe_set:
+                    continue
+                    
+                new_path = path + [adj_pos]
+                
+                if adj_pos == target_pos:
+                    return new_path
+                
+                queue.append((adj_pos, new_path))
+                visited.add(adj_pos)
+        
+        return None
         
     def step(self):
         if not self.agent.alive or self.exploration_complete:
@@ -177,11 +230,8 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
             return False, "Exploration complete - already at home (0,0)"
         
     def _return_home_safely(self):
-        """Return to (0,0) using only KB-confirmed safe positions"""
-        print(f"🏠 Returning home safely from {self.agent.position} to (0,0)")
-        
-        # Use BFS to find safe path to (0,0)
-        from collections import deque
+        """Return to (0,0) using selected pathfinding algorithm through KB-confirmed safe positions"""
+        print(f"🏠 Returning home safely from {self.agent.position} to (0,0) using {self.pathfinding_algorithm.upper()}")
         
         start_pos = self.agent.position
         target_pos = (0, 0)
@@ -189,111 +239,69 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         if start_pos == target_pos:
             return False, "Already at home!"
         
-        queue = deque([(start_pos, [])])
-        visited = {start_pos}
+        # Get all KB-safe positions
+        kb_safe_positions = set(self._get_all_kb_safe_positions())
         
-        while queue:
-            current_pos, path = queue.popleft()
+        # Use selected pathfinding algorithm
+        path = self._find_path_with_algorithm(start_pos, target_pos, kb_safe_positions)
+        
+        if path and len(path) > 1:
+            next_pos = path[1]  # Skip current position
+            print(f"  🗺️ {self.pathfinding_algorithm.upper()} found path to home: {path[:5]}{'...' if len(path) > 5 else ''}")
             
-            # Get adjacent positions
-            i, j = current_pos
-            adjacent = [(i-1, j), (i+1, j), (i, j-1), (i, j+1)]
-            
-            for adj_pos in adjacent:
-                # Skip out of bounds
-                adj_i, adj_j = adj_pos
-                if (adj_i < 0 or adj_i >= self.agent.environment.N or 
-                    adj_j < 0 or adj_j >= self.agent.environment.N):
-                    continue
+            # Find direction to next position
+            actions = self.agent.get_safe_moves()
+            for pos, direction, risk in actions:
+                if pos == next_pos:
+                    success = self._move_direction(direction)
+                    remaining_steps = len(path) - 2
+                    print(f"  Moving home: {start_pos} -> {next_pos} (remaining: {remaining_steps} steps)")
                     
-                if adj_pos in visited:
-                    continue
-                
-                # Only move through KB-confirmed safe positions
-                if self._is_kb_safe(adj_pos):
-                    new_path = path + [adj_pos]
-                    
-                    # If we found home, return the first step
-                    if adj_pos == target_pos:
-                        if new_path:
-                            next_pos = new_path[0]
-                            # Find direction to next position
-                            actions = self.agent.get_safe_moves()
-                            for pos, direction, risk in actions:
-                                if pos == next_pos:
-                                    success = self._move_direction(direction)
-                                    print(f"  Moving home: {current_pos} -> {next_pos} (remaining path: {len(new_path)-1} steps)")
-                                    return success, f"Returning home safely: step {len(path)+1} of path to (0,0)"
+                    # Check if we reached home
+                    if next_pos == target_pos:
+                        self.agent.escape()
+                        if self.agent.gold_obtain:
+                            print(f"🏠 Successfully reached home with gold! Final score: {self.agent.score}")
+                            return False, f"Successfully reached home with gold at (0,0)! Final score: {self.agent.score}"
                         else:
-                            # Direct adjacent to home
-                            actions = self.agent.get_safe_moves()
-                            for pos, direction, risk in actions:
-                                if pos == target_pos:
-                                    success = self._move_direction(direction)
-                                    # Call escape when reaching home to get points
-                                    self.agent.escape()
-                                    if self.agent.gold_obtain:
-                                        print(f"  Final step home: {current_pos} -> {target_pos}")
-                                        print(f"🏠 Successfully reached home with gold! Final score: {self.agent.score}")
-                                        return False, f"Successfully reached home with gold at (0,0)! Final score: {self.agent.score}"
-                                    else:
-                                        print(f"  Final step home: {current_pos} -> {target_pos}")
-                                        print(f"🏠 Successfully reached home safely! Final score: {self.agent.score}")
-                                        return False, f"Successfully reached home safely at (0,0)! Final score: {self.agent.score}"
+                            print(f"🏠 Successfully reached home safely! Final score: {self.agent.score}")
+                            return False, f"Successfully reached home safely at (0,0)! Final score: {self.agent.score}"
                     
-                    # Continue searching
-                    queue.append((adj_pos, new_path))
-                    visited.add(adj_pos)
+                    return success, f"Returning home safely via {self.pathfinding_algorithm.upper()}: step of {len(path)-1} total steps"
         
         # No safe path found - stay put and end game
-        print("⚠️ No safe path home found! Staying at current position.")
+        print(f"⚠️ No safe {self.pathfinding_algorithm.upper()} path home found! Staying at current position.")
         self.exploration_complete = True
         return False, "No safe path home available - mission incomplete"
 
     def _find_path_to_kb_safe_positions(self):
-        """Use BFS to find if there's a path to any unvisited KB-safe position through visited KB-safe positions"""
+        """Use A* to find optimal path to any unvisited KB-safe position"""
         all_kb_safe_positions = self._get_all_kb_safe_positions()
         unvisited_kb_safe = [pos for pos in all_kb_safe_positions if pos not in self.visited_positions]
         
         if not unvisited_kb_safe:
             return None, None  # No unvisited KB-safe positions
             
-        # BFS to find shortest path to any unvisited KB-safe position
-        from collections import deque
+        # Get all KB-safe positions as set
+        kb_safe_set = set(all_kb_safe_positions)
         
-        queue = deque([(self.agent.position, [])])  # (position, path)
-        visited = {self.agent.position}
+        # Find best path using A*
+        result = find_best_kb_safe_path(
+            self.agent.position,
+            unvisited_kb_safe, 
+            kb_safe_set,
+            self.visited_positions,
+            self.agent.environment.N,
+            use_astar=True
+        )
         
-        while queue:
-            current_pos, path = queue.popleft()
-            
-            # Get adjacent positions
-            i, j = current_pos
-            adjacent = [(i-1, j), (i+1, j), (i, j-1), (i, j+1)]
-            
-            for adj_pos in adjacent:
-                # Skip out of bounds
-                adj_i, adj_j = adj_pos
-                if (adj_i < 0 or adj_i >= self.agent.environment.N or 
-                    adj_j < 0 or adj_j >= self.agent.environment.N):
-                    continue
-                    
-                if adj_pos in visited:
-                    continue
-                    
-                # Check if this position is KB-safe
-                if self._is_kb_safe(adj_pos):
-                    new_path = path + [adj_pos]
-                    
-                    # If we found an unvisited KB-safe position, return the path
-                    if adj_pos in unvisited_kb_safe:
-                        return adj_pos, new_path
-                    
-                    # Otherwise, continue searching through this KB-safe position
-                    queue.append((adj_pos, new_path))
-                    visited.add(adj_pos)
+        if result:
+            best_target, best_path = result
+            if len(best_path) > 1:
+                # Return target and path excluding current position
+                return best_target, best_path[1:]
         
-        return None, None  # No path found
+        return None, None
 
     def _get_all_kb_safe_positions(self):
         """Get all positions that KB has confirmed as safe"""
@@ -429,43 +437,20 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         return False
 
     def _find_path_to_specific_position(self, target_pos):
-        """Use BFS to find path to a specific position through KB-safe cells only"""
+        """Use selected pathfinding algorithm to find optimal path to a specific position through KB-safe cells only"""
         if target_pos == self.agent.position:
             return target_pos, []
         
-        from collections import deque
+        # Get all KB-safe positions
+        all_kb_safe = self._get_all_kb_safe_positions()
+        kb_safe_set = set(all_kb_safe)
         
-        queue = deque([(self.agent.position, [])])  # (position, path)
-        visited = {self.agent.position}
+        # Use selected pathfinding algorithm
+        path = self._find_path_with_algorithm(self.agent.position, target_pos, kb_safe_set)
         
-        while queue:
-            current_pos, path = queue.popleft()
-            
-            # Get adjacent positions
-            i, j = current_pos
-            adjacent = [(i-1, j), (i+1, j), (i, j-1), (i, j+1)]
-            
-            for adj_pos in adjacent:
-                # Skip out of bounds
-                adj_i, adj_j = adj_pos
-                if (adj_i < 0 or adj_i >= self.agent.environment.N or 
-                    adj_j < 0 or adj_j >= self.agent.environment.N):
-                    continue
-                    
-                if adj_pos in visited:
-                    continue
-                    
-                # Check if this position is KB-safe
-                if self._is_kb_safe(adj_pos):
-                    new_path = path + [adj_pos]
-                    
-                    # If we found the target, return it
-                    if adj_pos == target_pos:
-                        return target_pos, new_path
-                    
-                    # Otherwise, continue searching through this KB-safe position
-                    queue.append((adj_pos, new_path))
-                    visited.add(adj_pos)
+        if path and len(path) > 1:
+            # Return target and path excluding current position
+            return target_pos, path[1:]
         
         return None, None  # No path found
         
@@ -724,6 +709,33 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         # Reset navigation attempts to allow exploring newly safe areas
         self.navigation_attempts = 0
         print(f"    🔄 Reset navigation attempts - ready to explore newly safe areas")
+
+    def get_current_state(self):
+        """Get current state of the agent for UI display"""
+        return {
+            'position': self.agent.position,
+            'direction': self.agent.direction, 
+            'score': self.agent.score,
+            'alive': self.agent.alive,
+            'gold': self.agent.gold_obtain,
+            'arrow': self.agent.arrow_hit,
+            'visited': list(self.visited_positions),  # Add visited cells for UI display
+            'state': 'returning_home' if self.returning_home else ('complete' if self.exploration_complete else 'exploring')
+        }
+    
+    def get_final_result(self):
+        """Get final result of the agent for UI display"""
+        return {
+            'score': self.agent.score,
+            'gold': self.agent.gold_obtain,
+            'alive': self.agent.alive,
+            'position': self.agent.position,
+            'arrow_hit': self.agent.arrow_hit,
+            'visited_cells': list(self.visited_positions),  # Convert set to list for UI
+            'status': 'SUCCESS' if self.agent.alive else 'DEAD',
+            'exploration_complete': self.exploration_complete,
+            'returned_home': self.agent.position == (0, 0) and self.returning_home
+        }
 
 # Alias for backwards compatibility
 SafeFirstIntelligentAgent = KnowledgeBaseSafeAgent
