@@ -10,6 +10,8 @@ from agent.kb_safe_agent import KnowledgeBaseSafeAgent
 from agent.kb_safe_moving_wumpus_agent import KnowledgeBaseSafeMovingWumpusAgent
 from agent.random_agent import RandomAgent
 import re
+import json
+import os
 
 class WumpusWorldUI:
     def __init__(self):
@@ -38,6 +40,60 @@ class WumpusWorldUI:
         self.load_images()
         self.setup_game()
         
+        self.available_maps = self.load_random_maps()
+        
+        # Initially hide testcase controls if Random is selected
+        self.update_control_visibility()
+        
+    def load_random_maps(self):
+        """Load list of available random maps from all_maps_index.json (60 maps)"""
+        try:
+            with open('all_maps_index.json', 'r') as f:
+                maps_info = json.load(f)
+            
+            available_maps = {}
+            for map_info in maps_info:
+                if os.path.exists(map_info['filename']):
+                    map_name = f"Map {map_info['id']:02d}: {map_info['size']}x{map_info['size']} ({map_info['wumpuses']}W, {map_info['pits']}P)"
+                    available_maps[map_name] = map_info['filename']
+            
+            if not available_maps:
+                print("⚠️ No random maps found, using default")
+                available_maps = {"Default 8x8": "default_map.json"}
+            
+            print(f"📋 Loaded {len(available_maps)} random maps with 20% pit probability")
+            return available_maps
+            
+        except FileNotFoundError:
+            print("⚠️ all_maps_index.json not found, please run generate_60_maps.py first")
+            return {"Default 8x8": "default_map.json"}
+        except Exception as e:
+            print(f"❌ Error loading maps index: {e}")
+            return {"Default 8x8": "default_map.json"}
+    
+    def load_map_from_json(self, filename):
+        """Load map data from JSON file"""
+        try:
+            filepath = os.path.join("testcases", "map", filename)
+            with open(filepath, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"❌ Error loading map from {filename}: {e}")
+            return None
+    
+    def update_control_visibility(self):
+        """Update the visibility of controls based on map type selection"""
+        map_type = self.map_type_var.get()
+        
+        if map_type == "Random":
+            # Show random controls, hide testcase controls
+            self.random_frame.pack(side=tk.LEFT)
+            self.testcase_frame.pack_forget()
+        else:  # Testcase
+            # Hide random controls, show testcase controls
+            self.random_frame.pack_forget()
+            self.testcase_frame.pack(side=tk.LEFT)
+        
     def create_widgets(self):
         # Main frame
         main_frame = ttk.Frame(self.root)
@@ -47,25 +103,49 @@ class WumpusWorldUI:
         control_frame = ttk.Frame(main_frame)
         control_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Label(control_frame, text="Map Size:").pack(side=tk.LEFT, padx=(0, 5))
+        # Map type selector
+        ttk.Label(control_frame, text="Map Type:").pack(side=tk.LEFT, padx=(0, 5))
+        self.map_type_var = tk.StringVar(value="Random")
+        self.map_type_combo = ttk.Combobox(control_frame, textvariable=self.map_type_var, 
+                                          values=["Random", "Testcase"], width=10, state="readonly")
+        self.map_type_combo.pack(side=tk.LEFT, padx=(0, 15))
+        self.map_type_combo.bind('<<ComboboxSelected>>', self.on_map_type_change)
+        
+        # Random map controls frame
+        self.random_frame = ttk.Frame(control_frame)
+        self.random_frame.pack(side=tk.LEFT)
+        
+        ttk.Label(self.random_frame, text="Map Size:").pack(side=tk.LEFT, padx=(0, 5))
         self.size_var = tk.StringVar(value="8")
-        self.size_combo = ttk.Combobox(control_frame, textvariable=self.size_var, values=["8", "9", "10"], width=5, state="readonly")
+        self.size_combo = ttk.Combobox(self.random_frame, textvariable=self.size_var, values=["8", "9", "10"], width=5, state="readonly")
         self.size_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.size_combo.bind('<<ComboboxSelected>>', self.on_size_change)
         
         # Number of Wumpus input
-        ttk.Label(control_frame, text="Wumpus Count:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(self.random_frame, text="Wumpus Count:").pack(side=tk.LEFT, padx=(0, 5))
         self.wumpus_count_var = tk.StringVar(value="2")
-        self.wumpus_count_entry = ttk.Entry(control_frame, textvariable=self.wumpus_count_var, width=5)
+        self.wumpus_count_entry = ttk.Entry(self.random_frame, textvariable=self.wumpus_count_var, width=5)
         self.wumpus_count_entry.pack(side=tk.LEFT, padx=(0, 15))
         
         # Pit probability input
-        ttk.Label(control_frame, text="Pit Probability:").pack(side=tk.LEFT, padx=(0, 5))
+        ttk.Label(self.random_frame, text="Pit Probability:").pack(side=tk.LEFT, padx=(0, 5))
         self.pit_prob_var = tk.StringVar(value="0.2")
-        self.pit_prob_entry = ttk.Entry(control_frame, textvariable=self.pit_prob_var, width=5)
+        self.pit_prob_entry = ttk.Entry(self.random_frame, textvariable=self.pit_prob_var, width=5)
         self.pit_prob_entry.pack(side=tk.LEFT, padx=(0, 15))
         
-        # Agent type selector
+        # Testcase controls frame
+        self.testcase_frame = ttk.Frame(control_frame)
+        self.testcase_frame.pack(side=tk.LEFT)
+        
+        ttk.Label(self.testcase_frame, text="Test Map:").pack(side=tk.LEFT, padx=(0, 5))
+        self.testcase_var = tk.StringVar(value="Map 8x8_07")
+        self.testcase_combo = ttk.Combobox(self.testcase_frame, textvariable=self.testcase_var, 
+                                          values=["Map 8x8_07", "Map 10x10_01", "Map 12x12_16"], 
+                                          width=12, state="readonly")
+        self.testcase_combo.pack(side=tk.LEFT, padx=(0, 15))
+        self.testcase_combo.bind('<<ComboboxSelected>>', self.on_testcase_change)
+        
+        # Agent type selector (in main control frame)
         ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
         self.agent_var = tk.StringVar(value="Random")
         self.agent_combo = ttk.Combobox(control_frame, textvariable=self.agent_var, 
@@ -150,6 +230,65 @@ class WumpusWorldUI:
             self.images = {}
     
     def setup_game(self):
+        map_type = self.map_type_var.get()
+        
+        if map_type == "Testcase":
+            # Load testcase map
+            testcase_name = self.testcase_var.get()
+            filename_map = {
+                "Map 8x8_07": "map_8x8_07.json",
+                "Map 10x10_01": "map_10x10_01.json", 
+                "Map 12x12_16": "map_12x12_16.json"
+            }
+            
+            filename = filename_map.get(testcase_name, "map_8x8_07.json")
+            map_data = self.load_map_from_json(filename)
+            
+            if map_data is None:
+                print(f"❌ Failed to load testcase map {filename}, falling back to random generation")
+                self.setup_random_game()
+                return
+            
+            # Extract data from JSON
+            self.grid_size = map_data['size']
+            self.game_map = map_data['map']
+            self.wumpus_positions = [tuple(pos) for pos in map_data['wumpus_positions']]
+            self.pit_positions = [tuple(pos) for pos in map_data['pit_positions']]
+            
+            # Update canvas size
+            self.canvas.config(
+                width=(self.grid_size + 1) * self.cell_size, 
+                height=(self.grid_size + 1) * self.cell_size
+            )
+            
+            # Create environment with loaded data
+            self.environment = WumpusEnvironment(self.game_map, self.wumpus_positions, self.pit_positions)
+            
+        else:
+            # Random map generation
+            self.setup_random_game()
+        
+        # Create agent (common for both types)
+        self.agent = Agent(environment=self.environment, N=self.grid_size)
+        
+        agent_type = self.agent_var.get()
+        if agent_type == "Random":
+            self.step_agent = RandomAgent(self.agent)
+        elif agent_type == "Hybrid":
+            self.step_agent = KnowledgeBaseSafeAgent(self.agent, max_risk_threshold=1.0)
+        elif agent_type == "Moving Wumpus":
+            self.step_agent = KnowledgeBaseSafeMovingWumpusAgent(self.agent, 'dijkstra')
+        else:
+            self.step_agent = RandomAgent(self.agent)
+        
+        self.current_step = 0
+        self.game_finished = False
+        
+        self.draw_game_state()
+        self.update_stats()
+    
+    def setup_random_game(self):
+        """Setup a randomly generated game"""
         self.grid_size = int(self.size_var.get())
         
         try:
@@ -179,24 +318,6 @@ class WumpusWorldUI:
             self.wumpus_positions = [self.wumpus_positions]
         
         self.environment = WumpusEnvironment(self.game_map, self.wumpus_positions, self.pit_positions)
-        
-        self.agent = Agent(environment=self.environment, N=self.grid_size)
-        
-        agent_type = self.agent_var.get()
-        if agent_type == "Random":
-            self.step_agent = RandomAgent(self.agent)
-        elif agent_type == "Hybrid":
-            self.step_agent = KnowledgeBaseSafeAgent(self.agent, max_risk_threshold=1.0)
-        elif agent_type == "Moving Wumpus":
-            self.step_agent = KnowledgeBaseSafeMovingWumpusAgent(self.agent, 'dijkstra')
-        else:
-            self.step_agent = RandomAgent(self.agent)
-        
-        self.current_step = 0
-        self.game_finished = False
-        
-        self.draw_game_state()
-        self.update_stats()
         
     def draw_game_state(self):
         self.canvas.delete("all")
@@ -634,6 +755,20 @@ Risk Threshold: {state.get('risk_threshold', 'N/A')}"""
     def on_agent_change(self, event):
         """Handle agent type change"""
         if not self.is_playing:  # Only allow agent change when not playing
+            self.reset_game()
+    
+    def on_map_type_change(self, event):
+        """Handle map type change"""
+        if not self.is_playing:  # Only allow map type change when not playing
+            self.update_control_visibility()
+            self.reset_game()
+        else:
+            # Revert to previous selection if game is running
+            pass
+    
+    def on_testcase_change(self, event):
+        """Handle testcase map change"""
+        if not self.is_playing:  # Only allow testcase change when not playing
             self.reset_game()
     
     def run(self):
