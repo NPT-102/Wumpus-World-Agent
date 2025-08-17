@@ -76,12 +76,8 @@ class WumpusEnvironment:
                 hit_any = True
                 print(f"Scream! Wumpus at {(i,j)} is dead.")
                 
-                # Remove Stench around dead Wumpus
-                for di, dj in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                    ni, nj = i + di, j + dj
-                    if (0 <= ni < self.N) and (0 <= nj < self.N):
-                        if "S" in self.game_map[ni][nj]:
-                            self.game_map[ni][nj].remove("S")
+                # Remove Stench around dead Wumpus more carefully
+                self._remove_stench_around_dead_wumpus(i, j)
                 
                 # Update wumpus positions
                 if (i, j) in self.wumpus_positions:
@@ -92,6 +88,37 @@ class WumpusEnvironment:
             j += mj
             
         return hit_any
+    
+    def _remove_stench_around_dead_wumpus(self, dead_wumpus_row, dead_wumpus_col):
+        """Remove stench around dead Wumpus, but only if no other living Wumpus causes it"""
+        adjacent_positions = []
+        for di, dj in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+            ni, nj = dead_wumpus_row + di, dead_wumpus_col + dj
+            if (0 <= ni < self.N) and (0 <= nj < self.N):
+                adjacent_positions.append((ni, nj))
+        
+        for adj_pos in adjacent_positions:
+            ni, nj = adj_pos
+            if "S" in self.game_map[ni][nj]:
+                # Check if any other living Wumpus can cause stench at this position
+                has_other_wumpus_causing_stench = False
+                
+                # Check all positions adjacent to this stench position
+                for di2, dj2 in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                    check_i, check_j = ni + di2, nj + dj2
+                    if (0 <= check_i < self.N) and (0 <= check_j < self.N):
+                        # Skip the dead Wumpus position
+                        if (check_i, check_j) == (dead_wumpus_row, dead_wumpus_col):
+                            continue
+                        # If there's another Wumpus here, it can cause the stench
+                        if "W" in self.game_map[check_i][check_j]:
+                            has_other_wumpus_causing_stench = True
+                            break
+                
+                # Remove stench only if no other Wumpus causes it
+                if not has_other_wumpus_causing_stench:
+                    self.game_map[ni][nj].remove("S")
+                    print(f"Removed stench at {(ni, nj)} - no more Wumpus nearby")
     
     def is_valid_position(self, position):
         """Check if position is within bounds"""

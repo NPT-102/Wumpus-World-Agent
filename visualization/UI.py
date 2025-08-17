@@ -365,7 +365,8 @@ class WumpusWorldUI:
                     if (row, col) in visited:
                         if 'B' in cell_contents:
                             visible_contents.append('B')
-                        if 'S' in cell_contents:
+                        # Only show stench if there's actually a living Wumpus causing it
+                        if 'S' in cell_contents and self._is_stench_valid(row, col):
                             visible_contents.append('S')
                 
                 if hasattr(self.step_agent, 'current_wumpus_positions') and (row, col) in visited:
@@ -375,7 +376,7 @@ class WumpusWorldUI:
                             wumpus_idx = self.step_agent.current_wumpus_positions.index(wumpus_pos)
                             if not self.step_agent.wumpus_alive_status[wumpus_idx]:
                                 visible_contents.append('W_DEAD')
-                
+
                 if visible_contents:
                     self.draw_cell_contents(flipped_row, col, visible_contents)
 
@@ -427,7 +428,7 @@ class WumpusWorldUI:
                     symbol = self.get_symbol(fact)
                     
                     if symbol == 'S':
-                        if (fact_row, fact_col) in visited:
+                        if (fact_row, fact_col) in visited and self._is_stench_valid(fact_row, fact_col):
                             self.draw_positive_fact(flipped_row, fact_col, 'S')
                     elif symbol == 'B':
                         if (fact_row, fact_col) in visited:
@@ -446,6 +447,27 @@ class WumpusWorldUI:
 
         flipped_row = self.grid_size - agent_row - 1
         self.draw_agent(flipped_row, agent_col, agent_dir)
+        
+    def _is_stench_valid(self, row, col):
+        """Check if stench at (row, col) is caused by a living Wumpus"""
+        # Check adjacent cells for living Wumpuses
+        for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            adj_row, adj_col = row + di, col + dj
+            
+            if 0 <= adj_row < self.grid_size and 0 <= adj_col < self.grid_size:
+                # Check if there's a Wumpus at adjacent position
+                if hasattr(self.step_agent, 'current_wumpus_positions'):
+                    # For Moving Wumpus agent, check the tracked positions and alive status
+                    for idx, wumpus_pos in enumerate(self.step_agent.current_wumpus_positions):
+                        if (wumpus_pos == (adj_row, adj_col) and 
+                            self.step_agent.wumpus_alive_status[idx]):
+                            return True
+                else:
+                    # For regular agents, check the map directly
+                    if 'W' in self.agent.environment.game_map[adj_row][adj_col]:
+                        return True
+        
+        return False
         
     def fact_position(self, fact):
         if not fact.startswith('~'):

@@ -117,6 +117,9 @@ def update_stench_patterns(environment, old_pos, new_pos):
     old_adjacent = get_adjacent_positions(old_pos, N)
     for adj_pos in old_adjacent:
         i, j = adj_pos
+        if 'S' not in environment.game_map[i][j]:
+            continue  # No stench to remove
+            
         # Check if any other Wumpus can cause stench here
         has_other_wumpus_nearby = False
         other_adjacent = get_adjacent_positions(adj_pos, N)
@@ -126,8 +129,9 @@ def update_stench_patterns(environment, old_pos, new_pos):
                 break
         
         # Remove stench only if no other Wumpus causes it
-        if not has_other_wumpus_nearby and 'S' in environment.game_map[i][j]:
+        if not has_other_wumpus_nearby:
             environment.game_map[i][j].remove('S')
+            print(f"Removed stench at {adj_pos} (no more Wumpus nearby)")
     
     # Add stench around new position
     new_adjacent = get_adjacent_positions(new_pos, N)
@@ -135,6 +139,8 @@ def update_stench_patterns(environment, old_pos, new_pos):
         i, j = adj_pos
         if 'S' not in environment.game_map[i][j]:
             environment.game_map[i][j].append('S')
+            print(f"Added stench at {adj_pos} (Wumpus moved nearby)")
+        # If stench already exists, no need to add again
 
 
 def get_adjacent_positions(position, N):

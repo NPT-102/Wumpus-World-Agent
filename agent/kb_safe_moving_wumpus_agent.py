@@ -386,6 +386,9 @@ class KnowledgeBaseSafeMovingWumpusAgent(KnowledgeBaseSafeAgent):
         for adj_pos in adjacent_positions:
             i, j = adj_pos
             
+            if 'S' not in self.agent.environment.game_map[i][j]:
+                continue  # No stench to remove
+            
             # Check if any other living Wumpus can cause stench here
             has_other_wumpus_nearby = False
             other_adjacent = []
@@ -406,9 +409,17 @@ class KnowledgeBaseSafeMovingWumpusAgent(KnowledgeBaseSafeAgent):
                         break
             
             # Remove stench only if no other living Wumpus causes it
-            if not has_other_wumpus_nearby and 'S' in self.agent.environment.game_map[i][j]:
+            if not has_other_wumpus_nearby:
                 self.agent.environment.game_map[i][j].remove('S')
                 stenches_removed.append(adj_pos)
+                
+                # Also update KB to remove stench fact if agent has visited this position
+                if adj_pos in self.visited_positions:
+                    stench_fact = f"S({i},{j})"
+                    if stench_fact in self.agent.kb.facts:
+                        self.agent.kb.facts.discard(stench_fact)
+                        self.agent.kb.tell(f"~S({i},{j})")
+                        print(f"   🧠 Updated KB: removed stench fact at {adj_pos}")
         
         if stenches_removed:
             print(f"   🌬️ Removed stench from positions: {stenches_removed}")
