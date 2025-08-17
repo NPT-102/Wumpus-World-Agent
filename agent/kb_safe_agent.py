@@ -97,6 +97,25 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
                     print(f"  Following path: moving to {next_pos} (step {self.navigation_attempts}/{len(path)})")
                     return success, f"Following path to KB-safe {target_pos}: step {self.navigation_attempts}"
         
+        # Alternative: Check for any unvisited KB-safe position we can reach
+        if not target_pos or not path:
+            print("Searching for any reachable KB-safe positions...")
+            all_kb_safe = self._get_all_kb_safe_positions()
+            unvisited_kb_safe = [pos for pos in all_kb_safe if pos not in self.visited_positions]
+            
+            for unvisited_pos in unvisited_kb_safe:
+                found_target, found_path = self._find_path_to_specific_position(unvisited_pos)
+                if found_target and found_path and self.navigation_attempts < self.max_navigation_attempts:
+                    print(f"Found alternative path to {found_target}: {found_path}")
+                    # Move to the first position in the path
+                    next_pos = found_path[0]
+                    for pos, direction, risk in actions:
+                        if pos == next_pos:
+                            success = self._move_direction(direction)
+                            self.navigation_attempts += 1
+                            print(f"  Alternative path: moving to {next_pos} (step 1/{len(found_path)})")
+                            return success, f"Alternative path to KB-safe {found_target}: step 1"
+        
         if target_pos and path:
             print(f"  Found path but navigation attempts exhausted ({self.navigation_attempts}/{self.max_navigation_attempts})")
         else:
@@ -248,9 +267,9 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         """Get all positions that KB has confirmed as safe"""
         kb_safe_positions = []
         
-        # Check all positions within reasonable range
-        for i in range(max(0, self.agent.position[0] - 3), min(self.agent.environment.N, self.agent.position[0] + 4)):
-            for j in range(max(0, self.agent.position[1] - 3), min(self.agent.environment.N, self.agent.position[1] + 4)):
+        # Check all positions in the grid (not just nearby ones)
+        for i in range(self.agent.environment.N):
+            for j in range(self.agent.environment.N):
                 if self._is_kb_safe((i, j)):
                     kb_safe_positions.append((i, j))
         
@@ -357,35 +376,61 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
     def _has_reachable_kb_safe_positions(self):
         """Check if there are unvisited KB-safe positions reachable through visited KB-safe positions"""
         
-        # Simple BFS to find reachable unvisited KB-safe positions
-        queue = [self.agent.position]
-        checked = set()
+        # Get all KB-safe positions and check if any unvisited ones are reachable
+        all_kb_safe = self._get_all_kb_safe_positions()
+        unvisited_kb_safe = [pos for pos in all_kb_safe if pos not in self.visited_positions]
         
-        while queue:
-            current = queue.pop(0)
-            if current in checked:
-                continue
-            checked.add(current)
-            
-            # Get adjacent positions
-            i, j = current
-            for di, dj in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                ni, nj = i + di, j + dj
-                next_pos = (ni, nj)
-                
-                # Skip if out of bounds or already checked
-                if not (0 <= ni < 4 and 0 <= nj < 4) or next_pos in checked:
-                    continue
-                
-                # If KB-safe and unvisited, we found a reachable target
-                if self._is_kb_safe(next_pos) and next_pos not in self.visited_positions:
-                    return True
-                
-                # If KB-safe and visited, add to queue for further exploration
-                if self._is_kb_safe(next_pos) and next_pos in self.visited_positions:
-                    queue.append(next_pos)
+        if not unvisited_kb_safe:
+            return False
+        
+        # For each unvisited KB-safe position, check if there's a path to it
+        for target_pos in unvisited_kb_safe:
+            _, path = self._find_path_to_specific_position(target_pos)
+            if path is not None:
+                return True
         
         return False
+
+    def _find_path_to_specific_position(self, target_pos):
+        """Use BFS to find path to a specific position through KB-safe cells only"""
+        if target_pos == self.agent.position:
+            return target_pos, []
+        
+        from collections import deque
+        
+        queue = deque([(self.agent.position, [])])  # (position, path)
+        visited = {self.agent.position}
+        
+        while queue:
+            current_pos, path = queue.popleft()
+            
+            # Get adjacent positions
+            i, j = current_pos
+            adjacent = [(i-1, j), (i+1, j), (i, j-1), (i, j+1)]
+            
+            for adj_pos in adjacent:
+                # Skip out of bounds
+                adj_i, adj_j = adj_pos
+                if (adj_i < 0 or adj_i >= self.agent.environment.N or 
+                    adj_j < 0 or adj_j >= self.agent.environment.N):
+                    continue
+                    
+                if adj_pos in visited:
+                    continue
+                    
+                # Check if this position is KB-safe
+                if self._is_kb_safe(adj_pos):
+                    new_path = path + [adj_pos]
+                    
+                    # If we found the target, return it
+                    if adj_pos == target_pos:
+                        return target_pos, new_path
+                    
+                    # Otherwise, continue searching through this KB-safe position
+                    queue.append((adj_pos, new_path))
+                    visited.add(adj_pos)
+        
+        return None, None  # No path found
         
     def _try_shoot_wumpus(self):
         """Try to shoot Wumpus in a promising direction"""
@@ -415,8 +460,8 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         kb_dangerous_positions = []
         kb_unknown_positions = []
         
-        for i in range(4):  # Assume 4x4 grid
-            for j in range(4):
+        for i in range(self.agent.environment.N):
+            for j in range(self.agent.environment.N):
                 pos = (i, j)
                 if pos in self.visited_positions:
                     kb_safe_positions.append((pos, "VISITED"))
@@ -444,6 +489,33 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         print(f"  KB-Dangerous: {len(kb_dangerous_positions)}")
         print(f"  KB-Unknown: {len(kb_unknown_positions)}")
         print(f"  Visited: {len(self.visited_positions)}")
+        
+        # Show which KB-Safe positions were not visited
+        unvisited_safe = [pos for pos, status in kb_safe_positions if status == "KB_SAFE"]
+        if unvisited_safe:
+            print(f"\n⚠️  KB-Safe positions NOT visited:")
+            for pos in unvisited_safe:
+                reachable_target, reachable_path = self._find_path_to_specific_position(pos)
+                reachable_status = "REACHABLE" if reachable_target else "NOT REACHABLE"
+                print(f"    {pos}: {reachable_status}")
+        else:
+            print(f"\n✅ ALL KB-Safe positions were visited!")
+            
+        # Show summary of Safe facts in KB  
+        safe_facts = [f for f in self.agent.kb.facts if 'Safe(' in f and not f.startswith('~')]
+        print(f"\nKB Safe Facts Summary: {len(safe_facts)} total")
+        # Remove duplicates and show unique positions
+        unique_safe_positions = set()
+        for fact in safe_facts:
+            import re
+            match = re.search(r'Safe\((\d+)[, ]+(\d+)\)', fact)
+            if match:
+                pos = (int(match.group(1)), int(match.group(2)))
+                unique_safe_positions.add(pos)
+        print(f"Unique Safe positions in KB: {len(unique_safe_positions)}")
+        for pos in sorted(unique_safe_positions):
+            visited_status = "VISITED" if pos in self.visited_positions else "NOT VISITED"
+            print(f"  {pos}: {visited_status}")
         
     def _face_direction(self, target_direction):
         """Turn to face the target direction"""

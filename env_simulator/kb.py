@@ -61,7 +61,21 @@ class KnowledgeBase:
   def add_fact(self, *symbols):
     for symbol in symbols:
       if symbol not in self.facts:
-        self.facts.add(symbol)
+        # Normalize the format to avoid duplicates like Safe(0,0) vs Safe(0, 0)
+        normalized_symbol = self._normalize_fact_format(symbol)
+        if normalized_symbol not in self.facts:
+          self.facts.add(normalized_symbol)
+
+  def _normalize_fact_format(self, fact):
+    """Normalize fact format to avoid duplicates with different spacing"""
+    import re
+    # Convert Safe(0,1) to Safe(0, 1) format
+    pattern = r'(\w+)\((\d+),\s*(\d+)\)'
+    match = re.match(pattern, fact)
+    if match:
+      predicate, x, y = match.groups()
+      return f"{predicate}({x}, {y})"
+    return fact
 
   def forward_chain(self):
     new_facts = True
