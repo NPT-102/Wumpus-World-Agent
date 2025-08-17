@@ -8,6 +8,9 @@ from env_simulator.environment import WumpusEnvironment
 from agent.agent import Agent
 from agent.intelligent_agent_wrapper import IntelligentAgentWrapper
 from agent.intelligent_agent_dynamic import IntelligentAgentDynamic
+from agent.safe_first_intelligent_agent import SafeFirstIntelligentAgent
+from agent.simple_safe_agent import SafeFirstIntelligentAgent as SimpleSafeAgent
+from agent.kb_safe_agent import KnowledgeBaseSafeAgent
 from agent.random_agent import RandomAgent
 from agent.hybrid_agent import HybridAgent
 from agent.hybrid_agent_action_dynamic import HybridAgentDynamic
@@ -59,7 +62,7 @@ class WumpusWorldUI:
         ttk.Label(control_frame, text="Agent Type:").pack(side=tk.LEFT, padx=(0, 5))
         self.agent_var = tk.StringVar(value="Random")
         self.agent_combo = ttk.Combobox(control_frame, textvariable=self.agent_var, 
-                                       values=["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic"], width=18, state="readonly")
+                                       values=["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic", "Safe-First Intelligent", "KB-Safe"], width=20, state="readonly")
         self.agent_combo.pack(side=tk.LEFT, padx=(0, 15))
         self.agent_combo.bind('<<ComboboxSelected>>', self.on_agent_change)
         
@@ -201,6 +204,10 @@ class WumpusWorldUI:
             self.step_agent = IntelligentAgentWrapper(self.agent, max_risk_threshold=0.3)
         elif agent_type == "Intelligent Dynamic":
             self.step_agent = IntelligentAgentDynamic(self.agent, max_risk_threshold=0.3)
+        elif agent_type == "Safe-First Intelligent":
+            self.step_agent = SimpleSafeAgent(self.agent, max_risk_threshold=0.25)
+        elif agent_type == "KB-Safe":
+            self.step_agent = KnowledgeBaseSafeAgent(self.agent, max_risk_threshold=1.0)
         else:
             # Default to random agent
             self.step_agent = RandomAgent(self.agent)

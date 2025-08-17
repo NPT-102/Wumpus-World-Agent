@@ -4,6 +4,9 @@ from env_simulator.kb import KnowledgeBase
 from agent.agent import Agent
 from agent.intelligent_agent import IntelligentAgent
 from agent.intelligent_agent_dynamic import IntelligentAgentDynamic
+from agent.safe_first_intelligent_agent import SafeFirstIntelligentAgent
+from agent.simple_safe_agent import SafeFirstIntelligentAgent as SimpleSafeAgent
+from agent.kb_safe_agent import KnowledgeBaseSafeAgent
 from agent.random_agent import RandomAgent
 from agent.hybrid_agent import HybridAgent
 from agent.hybrid_agent_action_dynamic import HybridAgentDynamic
@@ -30,6 +33,10 @@ def test_agent(agent_type, game_map, wumpus_position, pit_positions, max_steps=2
         agent = IntelligentAgent(base_agent, max_risk_threshold=0.3)
     elif agent_type == "Intelligent Dynamic":
         agent = IntelligentAgentDynamic(base_agent, max_risk_threshold=0.3)
+    elif agent_type == "Safe-First Intelligent":
+        agent = KnowledgeBaseSafeAgent(base_agent, max_risk_threshold=1.0)  # Not used
+    elif agent_type == "KB-Safe":
+        agent = KnowledgeBaseSafeAgent(base_agent, max_risk_threshold=1.0)  # Pure KB agent
     else:
         raise ValueError(f"Unknown agent type: {agent_type}")
     
@@ -88,12 +95,16 @@ def main():
             test_agent("Hybrid Dynamic", game_map, wumpus_position, pit_positions)
         elif agent_type in ["Intelligent-Dynamic", "Int-Dynamic"]:
             test_agent("Intelligent Dynamic", game_map, wumpus_position, pit_positions)
+        elif agent_type in ["Safe-First", "Safe-First-Intelligent", "SafeFirst"]:
+            test_agent("Safe-First Intelligent", game_map, wumpus_position, pit_positions)
+        elif agent_type in ["KB-Safe", "KBSafe", "Knowledge-Base"]:
+            test_agent("KB-Safe", game_map, wumpus_position, pit_positions)
         else:
             print(f"Unknown agent type: {agent_type}")
-            print("Available types: random, hybrid, dynamic, intelligent, intelligent-dynamic")
+            print("Available types: random, hybrid, dynamic, intelligent, intelligent-dynamic, safe-first")
     else:
         # Test all agent types if no argument provided
-        agent_types = ["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic"]
+        agent_types = ["Random", "Hybrid", "Hybrid Dynamic", "Intelligent", "Intelligent Dynamic", "Safe-First Intelligent", "KB-Safe"]
         results = {}
         
         for agent_type in agent_types:
