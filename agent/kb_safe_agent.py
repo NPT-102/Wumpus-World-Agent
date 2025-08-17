@@ -42,10 +42,14 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         
         # Check if reached home with gold
         if self.returning_home and self.agent.position == (0, 0):
-            # Call escape to get the +1000 bonus points
+            # Call escape to get the appropriate bonus points
             self.agent.escape()
-            print(f"🏠 Successfully returned home with gold! Final score: {self.agent.score}")
-            return False, f"Successfully returned home with gold! Final score: {self.agent.score}"
+            if self.agent.gold_obtain:
+                print(f"🏠 Successfully returned home with gold! Final score: {self.agent.score}")
+                return False, f"Successfully returned home with gold! Final score: {self.agent.score}"
+            else:
+                print(f"🏠 Successfully returned home safely! Final score: {self.agent.score}")
+                return False, f"Successfully returned home safely! Final score: {self.agent.score}"
         
         # If returning home, use safe path finding to get back to (0,0)
         if self.returning_home:
@@ -145,14 +149,31 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
             if self._try_shoot_wumpus():
                 return True, "Shot arrow at Wumpus"
         
-        print("NO MORE KB-SAFE EXPLORATION OPTIONS - STOPPING")
-        print(f"Final visited positions: {sorted(list(self.visited_positions))}")
-        print(f"Total positions explored: {len(self.visited_positions)}")
-        
-        self._analyze_kb_state()
-        
-        self.exploration_complete = True
-        return False, "Exploration complete - no more KB-safe options"
+        # Before stopping exploration, try to return home safely if not already at (0,0)
+        if self.agent.position != (0, 0):
+            print("NO MORE KB-SAFE EXPLORATION OPTIONS - ATTEMPTING TO RETURN HOME SAFELY")
+            print(f"Current position: {self.agent.position}, attempting to return to (0,0)")
+            
+            # Check if there's a safe path home
+            home_target, home_path = self._find_path_to_specific_position((0, 0))
+            if home_target and home_path:
+                print(f"Found safe path home: {home_path}")
+                self.returning_home = True  # Set returning home flag
+                return self._return_home_safely()
+            else:
+                print("⚠️ No safe path home found!")
+                print(f"Final visited positions: {sorted(list(self.visited_positions))}")
+                print(f"Total positions explored: {len(self.visited_positions)}")
+                self._analyze_kb_state()
+                self.exploration_complete = True
+                return False, "Exploration complete - no safe path home available"
+        else:
+            print("NO MORE KB-SAFE EXPLORATION OPTIONS AND ALREADY AT HOME")
+            print(f"Final visited positions: {sorted(list(self.visited_positions))}")
+            print(f"Total positions explored: {len(self.visited_positions)}")
+            self._analyze_kb_state()
+            self.exploration_complete = True
+            return False, "Exploration complete - already at home (0,0)"
         
     def _return_home_safely(self):
         """Return to (0,0) using only KB-confirmed safe positions"""
@@ -208,8 +229,16 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
                             for pos, direction, risk in actions:
                                 if pos == target_pos:
                                     success = self._move_direction(direction)
-                                    print(f"  Final step home: {current_pos} -> {target_pos}")
-                                    return success, f"Final step: returning home to (0,0)"
+                                    # Call escape when reaching home to get points
+                                    self.agent.escape()
+                                    if self.agent.gold_obtain:
+                                        print(f"  Final step home: {current_pos} -> {target_pos}")
+                                        print(f"🏠 Successfully reached home with gold! Final score: {self.agent.score}")
+                                        return False, f"Successfully reached home with gold at (0,0)! Final score: {self.agent.score}"
+                                    else:
+                                        print(f"  Final step home: {current_pos} -> {target_pos}")
+                                        print(f"🏠 Successfully reached home safely! Final score: {self.agent.score}")
+                                        return False, f"Successfully reached home safely at (0,0)! Final score: {self.agent.score}"
                     
                     # Continue searching
                     queue.append((adj_pos, new_path))
