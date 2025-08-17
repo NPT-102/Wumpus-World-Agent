@@ -333,7 +333,10 @@ class WumpusWorldUI:
                         if (fact_row, fact_col) in visited:
                             self.draw_positive_fact(flipped_row, fact_col, 'B', 'cyan')
                     elif symbol == 'W':  
-                        self.draw_positive_fact(flipped_row, fact_col, 'W', 'darkred')
+                        # Only show Wumpus if it's not dead (check for ~W fact)
+                        dead_wumpus_fact = f"~W({fact_row},{fact_col})"
+                        if dead_wumpus_fact not in facts:
+                            self.draw_positive_fact(flipped_row, fact_col, 'W', 'darkred')
                     elif symbol == 'P':  
                         self.draw_positive_fact(flipped_row, fact_col, 'P', 'brown')
                     elif symbol == 'G':  

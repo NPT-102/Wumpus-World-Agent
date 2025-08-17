@@ -143,11 +143,12 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
                 print(f"Navigating via KB-safe visited {pos} [attempt {self.navigation_attempts}]")
                 return success, f"Navigating via KB-safe visited {pos}"
         
-        # Try shooting Wumpus to open new paths
+        # Try shooting Wumpus to open new paths - Enhanced strategy
         if hasattr(self.agent, 'arrow_hit') and self.agent.arrow_hit == 0:
-            print("Trying to shoot Wumpus to open new KB-safe paths...")
-            if self._try_shoot_wumpus():
-                return True, "Shot arrow at Wumpus"
+            print("Trying enhanced Wumpus hunting to open new KB-safe paths...")
+            wumpus_hunt_result = self._try_enhanced_wumpus_hunting()
+            if wumpus_hunt_result:
+                return True, wumpus_hunt_result
         
         # Before stopping exploration, try to return home safely if not already at (0,0)
         if self.agent.position != (0, 0):
@@ -568,6 +569,161 @@ class KnowledgeBaseSafeAgent(IntelligentAgent):
         """Move in specified direction"""
         self._face_direction(direction)
         return self.agent.move_forward()
+        
+    def _try_enhanced_wumpus_hunting(self):
+        """Enhanced Wumpus hunting strategy - find known Wumpus and plan to shoot it"""
+        
+        # Check if we have arrows left
+        if self.agent.arrow_hit > 0:
+            print("  🚫 No arrows left - cannot hunt Wumpus")
+            return None
+        
+        # Step 1: Find all known Wumpus positions from KB
+        known_wumpus_positions = []
+        for fact in self.agent.kb.facts:
+            if fact.startswith('W(') and not fact.startswith('~W('):
+                import re
+                match = re.search(r'W\((\d+)[, ]+(\d+)\)', fact)
+                if match:
+                    wumpus_pos = (int(match.group(1)), int(match.group(2)))
+                    known_wumpus_positions.append(wumpus_pos)
+        
+        if not known_wumpus_positions:
+            print("  ℹ️ No known Wumpus positions found in KB")
+            return None
+            
+        print(f"  🎯 Found {len(known_wumpus_positions)} known Wumpus positions: {known_wumpus_positions}")
+        
+        # Step 2: For each known Wumpus, find safe shooting positions
+        for wumpus_pos in known_wumpus_positions:
+            shooting_plan = self._find_safe_shooting_position(wumpus_pos)
+            if shooting_plan:
+                shooting_pos, target_pos, direction = shooting_plan
+                print(f"  📍 Found shooting plan: Move to {shooting_pos}, face {direction}, shoot Wumpus at {target_pos}")
+                
+                # Step 3: Execute the shooting plan
+                if self._execute_shooting_plan(shooting_pos, target_pos, direction):
+                    return f"Successfully hunted Wumpus at {target_pos} - new paths opened!"
+        
+        print("  ❌ No safe shooting positions found for known Wumpus")
+        return None
+    
+    def _find_safe_shooting_position(self, wumpus_pos):
+        """Find a safe position from which we can shoot the Wumpus"""
+        wi, wj = wumpus_pos
+        
+        # Check all 4 directions from Wumpus position
+        shooting_directions = [
+            ((wi-1, wj), (wi, wj), 'S'),  # Shoot from North to South
+            ((wi+1, wj), (wi, wj), 'N'),  # Shoot from South to North  
+            ((wi, wj-1), (wi, wj), 'E'),  # Shoot from West to East
+            ((wi, wj+1), (wi, wj), 'W')   # Shoot from East to West
+        ]
+        
+        for shooting_pos, target_pos, direction in shooting_directions:
+            si, sj = shooting_pos
+            
+            # Check if shooting position is within bounds
+            if not (0 <= si < self.agent.environment.N and 0 <= sj < self.agent.environment.N):
+                continue
+                
+            # Check if shooting position is KB-safe (either visited or KB-confirmed)
+            if not self._is_kb_safe(shooting_pos):
+                continue
+                
+            # Check if we can reach this shooting position
+            path_target, path = self._find_path_to_specific_position(shooting_pos)
+            if path_target:
+                return (shooting_pos, target_pos, direction)
+        
+        return None
+    
+    def _execute_shooting_plan(self, shooting_pos, target_pos, shoot_direction):
+        """Execute the plan to move to shooting position and shoot Wumpus"""
+        
+        # If not at shooting position, move there first
+        if self.agent.position != shooting_pos:
+            print(f"  🚶‍♂️ Moving to shooting position {shooting_pos}")
+            path_target, path = self._find_path_to_specific_position(shooting_pos)
+            if path and len(path) > 0:
+                # Move to first position in path
+                next_pos = path[0]
+                actions = self.agent.get_safe_moves()
+                for pos, direction, risk in actions:
+                    if pos == next_pos:
+                        success = self._move_direction(direction)
+                        if success:
+                            print(f"    ✅ Moved to {next_pos} on way to shooting position")
+                            return f"Moving to shooting position {shooting_pos}"
+                        break
+            return None
+        
+        # Now at shooting position, face the Wumpus and shoot
+        print(f"  🎯 At shooting position {shooting_pos}, targeting Wumpus at {target_pos}")
+        self._face_direction(shoot_direction)
+        
+        # Shoot the arrow
+        if hasattr(self.agent, 'shoot') and self.agent.arrow_hit == 0:
+            shot_success = self.agent.shoot()
+            if shot_success:
+                print(f"  🏹 Successfully shot Wumpus at {target_pos}!")
+                
+                # Update KB - mark Wumpus as dead and affected areas as safe
+                self._update_kb_after_wumpus_kill(target_pos)
+                return True
+            else:
+                print(f"  ❌ Arrow missed Wumpus at {target_pos}")
+                return False
+        else:
+            print(f"  🚫 Cannot shoot: arrow_hit={self.agent.arrow_hit}")
+        
+        return False
+    
+    def _update_kb_after_wumpus_kill(self, wumpus_pos):
+        """Update Knowledge Base after killing a Wumpus"""
+        wi, wj = wumpus_pos
+        
+        # Mark Wumpus position as no longer having Wumpus
+        self.agent.kb.add_fact(f"~W({wi},{wj})")
+        print(f"    📝 Updated KB: Wumpus at ({wi},{wj}) is dead")
+        
+        # Mark Wumpus position as safe (no Wumpus, and pits can't be in same cell as Wumpus)
+        self.agent.kb.add_fact(f"~P({wi},{wj})")
+        self.agent.kb.add_fact(f"Safe({wi},{wj})")
+        print(f"    ✅ Updated KB: ({wi},{wj}) is now SAFE")
+        
+        # Update adjacent cells - remove stench caused by this Wumpus
+        adjacent_positions = [
+            (wi-1, wj), (wi+1, wj), (wi, wj-1), (wi, wj+1)
+        ]
+        
+        for adj_i, adj_j in adjacent_positions:
+            if (0 <= adj_i < self.agent.environment.N and 0 <= adj_j < self.agent.environment.N):
+                # Check if there are other Wumpus that could cause stench at this adjacent position
+                other_wumpus_nearby = False
+                for other_wi, other_wj in [(adj_i-1, adj_j), (adj_i+1, adj_j), (adj_i, adj_j-1), (adj_i, adj_j+1)]:
+                    if (other_wi != wi or other_wj != wj):  # Not the Wumpus we just killed
+                        if f"W({other_wi},{other_wj})" in self.agent.kb.facts:
+                            other_wumpus_nearby = True
+                            break
+                
+                # If no other Wumpus nearby, remove stench
+                if not other_wumpus_nearby:
+                    self.agent.kb.add_fact(f"~S({adj_i},{adj_j})")
+                    print(f"    📝 Updated KB: No stench at ({adj_i},{adj_j}) - Wumpus killed")
+                    
+                    # If no breeze either, mark as safe
+                    if self.agent.kb.is_premise_true(f"~B({adj_i},{adj_j})") == True:
+                        self.agent.kb.add_fact(f"~P({adj_i},{adj_j})")
+                        self.agent.kb.add_fact(f"Safe({adj_i},{adj_j})")
+                        print(f"    ✅ Updated KB: ({adj_i},{adj_j}) is now SAFE (no stench, no breeze)")
+        
+        # Run forward chaining to deduce new facts
+        self.agent.kb.forward_chain()
+        
+        # Reset navigation attempts to allow exploring newly safe areas
+        self.navigation_attempts = 0
+        print(f"    🔄 Reset navigation attempts - ready to explore newly safe areas")
 
 # Alias for backwards compatibility
 SafeFirstIntelligentAgent = KnowledgeBaseSafeAgent
