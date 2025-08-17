@@ -46,14 +46,6 @@ class KnowledgeBase:
         # no stench implies no wumpus in adjacent cells
         for adj in adj_cells:
           self.rules.append((f'~S({i}, {j})', 'IMPLIES', [f'~W({adj[0]}, {adj[1]})']))
-          
-        # pit implies adjacent breeze
-        for adj in adj_cells:
-          self.rules.append((f'P({i}, {j})', 'IMPLIES', [f'B({adj[0]}, {adj[1]})']))
-
-        # wumpus implies adjacent stench
-        for adj in adj_cells:
-          self.rules.append((f'W({i}, {j})', 'IMPLIES', [f'S({adj[0]}, {adj[1]})']))
 
         # no pit and no wumpus implies safe
         self.rules.append((f'~P({i}, {j}) AND ~W({i}, {j})', 'IMPLIES', [f'Safe({i}, {j})']))
@@ -73,8 +65,11 @@ class KnowledgeBase:
 
   def forward_chain(self):
     new_facts = True
-    while new_facts:
+    iteration = 0
+    while new_facts and iteration < 50:
       new_facts = False
+      iteration += 1
+      
       for premise, rule_type, conclusions in self.rules:
         if rule_type == 'DISJUNCTION':
           if self.is_premise_true(premise):
@@ -96,7 +91,7 @@ class KnowledgeBase:
                 if conclusion not in self.facts:
                   self.facts.add(conclusion)
                   new_facts = True
-    self.update_dangerous()
+    self.update_dangerous()              
     
   # check if a premise is in facts or not
   def is_premise_true(self, premise):
