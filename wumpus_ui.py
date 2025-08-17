@@ -358,12 +358,8 @@ class WumpusWorldUI:
         """Draw a positive fact with images when available, fallback to shapes"""
         x = col * self.cell_size + self.cell_size + self.cell_size//2
         y = row * self.cell_size + self.cell_size//2
-        
-        if symbol == 'SAFE':
-            # Draw safe indicator as a small green circle with checkmark
-            self.canvas.create_oval(x+15, y+20, x+31, y+36, fill=color, outline='darkgreen', width=2)
-            self.canvas.create_text(x+23, y+28, text="✓", font=('Arial', 8, 'bold'), fill='white')
-        elif symbol == 'W':
+
+        if symbol == 'W':
                 self.canvas.create_image(x, y, image=self.images['W'])
         elif symbol == 'P':
                 self.canvas.create_image(x, y, image=self.images['P'])
@@ -631,10 +627,18 @@ Alive: {state['alive']}
 Has Gold: {state['gold']}
 Arrow Status: {'Not shot' if state['arrow'] == 0 else 'Hit' if state['arrow'] == 1 else 'Missed'}
 Current State: {state.get('state', 'exploring')}
+Current Strategy: {state.get('current_strategy', 'N/A')}
 Risk at Position: {risk_info}
 Risk Threshold: {state.get('risk_threshold', 'N/A')}
 Returning Home: {state.get('returning_home', False)}
-Percepts: {', '.join(percepts)}"""
+Percepts: {', '.join(percepts)}
+
+KB Knowledge:
+Safe Cells Known: {state.get('kb_stats', {}).get('safe_cells', 0)}
+Known Pits: {state.get('kb_stats', {}).get('known_pits', 0)}
+Known Wumpuses: {state.get('kb_stats', {}).get('known_wumpuses', 0)}
+Stenches Detected: {state.get('kb_stats', {}).get('stenches', 0)}
+Breezes Detected: {state.get('kb_stats', {}).get('breezes', 0)}"""
             
             self.stats_text.delete(1.0, tk.END)
             self.stats_text.insert(1.0, stats)
